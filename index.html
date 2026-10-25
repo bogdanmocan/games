@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Screw Puzzle 3D</title>
+<style>
+:root{
+  --bg:#eef1f6;--fg:#1c2230;--muted:#5b6578;--btn:#2d6cdf;--btnfg:#ffffff;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--bg:#121620;--fg:#e8ecf5;--muted:#9aa5ba;--btn:#4c8dff;--btnfg:#0b1020}
+}
+:root[data-theme="dark"]{--bg:#121620;--fg:#e8ecf5;--muted:#9aa5ba;--btn:#4c8dff;--btnfg:#0b1020}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+html,body{height:100%;margin:0}
+body{
+  background:var(--bg);color:var(--fg);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  display:flex;flex-direction:column;align-items:center;
+  overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;
+}
+header{
+  width:100%;max-width:520px;box-sizing:border-box;padding:10px 14px 2px;
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+}
+.title{display:flex;align-items:baseline;gap:10px}
+h1{font-size:18px;margin:0;font-weight:700}
+#rem{font-size:13px;color:var(--muted)}
+.hint{font-size:12px;color:var(--muted);padding:0 14px 6px;max-width:520px;box-sizing:border-box;text-align:center}
+button{
+  font:inherit;font-weight:600;border:0;border-radius:10px;padding:8px 14px;
+  background:var(--btn);color:var(--btnfg);cursor:pointer;
+}
+button:focus-visible{outline:3px solid var(--fg);outline-offset:2px}
+#wrap{flex:1;width:100%;min-height:0;position:relative;overflow:hidden}
+#wrap canvas{display:block;touch-action:none}
+#overlay{
+  position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+  background:rgba(8,12,20,.55);
+}
+#overlay .box{
+  background:var(--bg);color:var(--fg);padding:22px 26px;border-radius:16px;text-align:center;
+  box-shadow:0 10px 40px rgba(0,0,0,.4);min-width:220px;
+}
+#overlay h2{margin:0 0 6px;font-size:22px}
+#overlay p{margin:0 0 14px;color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+<header>
+  <div class="title"><h1 id="lvl">Nivel 1</h1><span id="rem"></span></div>
+  <button id="restart" type="button">Reia nivelul</button>
+</header>
+<div class="hint">Șurub liber: scoate-l. Bloc: transparent 80% / opac. Trage: rotește camera.</div>
+<div id="wrap">
+  <div id="overlay"><div class="box"><h2 id="ovT"></h2><p id="ovP"></p><button id="ovB" type="button"></button></div></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+const wrap=document.getElementById('wrap');
+if(typeof THREE==='undefined'){wrap.textContent='Nu s-a putut încărca grafica 3D.';return}
+
+const W=360,H=640;
+const BOARD={x:20,y:112,w:320,h:376};
+const COLORS=['#e5484d','#3b82f6','#22c55e','#f5b301','#a855f7','#f97316','#14b8a6','#ec4899'];
+const PLATE_COLORS=['#8d99ae','#b09a7a','#7f95a8','#a8a29a','#7aa08c','#a389aa','#c2a98b'];
+const BUF_Y=566,G=900,LZ=16,Z0=24,ZEND=10.4;
+const GHOST=0.2; // 80% transparent
+
+let renderer;
+try{renderer=new THREE.WebGLRenderer({antialias:true})}
+catch(e){wrap.textContent='WebGL nu este disponibil pe acest dispozitiv.';return}
+renderer.setClearColor(0x131925);
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+wrap.insertBefore(renderer.domElement,wrap.firstChild);
+
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(35,1,10,5000);
+const pickGroup=new THREE.Group();scene.add(pickGroup);
+const dynGroup=new THREE.Group();scene.add(dynGroup);
+
+scene.add(new THREE.AmbientLight(0xffffff,.62));
+const sun=new THREE.DirectionalLight(0xffffff,.85);
+sun.position.set(-170,260,650);
+sun.castShadow=true;
+sun.shadow.mapSize.set(1024,1024);
+const sc=sun.shadow.camera;sc.left=-320;sc.right=320;sc.top=460;sc.bottom=-460;sc.near=100;sc.far=1800;
+scene.add(sun);
+
+// helpers
+const X=x=>x-180,Y=y=>320-y;
+const rnd=(a,b)=>a+Math.random()*(b-a);
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function rrShape(w,h,r){
+  const s=new THREE.Shape(),x=-w/2,y=-h/2;
+  s.moveTo(x+r,y);s.lineTo(x+w-r,y);s.quadraticCurveTo(x+w,y,x+w,y+r);
+  s.lineTo(x+w,y+h-r);s.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  s.lineTo(x+r,y+h);s.quadraticCurveTo(x,y+h,x,y+h-r);
+  s.lineTo(x,y+r);s.quadraticCurveTo(x,y,x+r,y);return s;
+}
+function extrude(w,h,r,depth,bev){
+  const g=new THREE.ExtrudeGeometry(rrShape(w,h,r),{depth,bevelEnabled:true,bevelThickness:bev,bevelSize:bev,bevelSegments:2,curveSegments:6});
+  g.translate(0,0,-depth/2);return g;
+}
+
+// static scenery
+const bufMeshes=[];
+(function(){
+  const wall=new THREE.Mesh(new THREE.PlaneGeometry(1600,2200),new THREE.MeshStandardMaterial({color:0x1b2332,roughness:.95}));
+  wall.position.z=-14;wall.receiveShadow=true;scene.add(wall);
+  const panel=new THREE.Mesh(extrude(BOARD.w+14,BOARD.h+14,18,4,1.5),new THREE.MeshStandardMaterial({color:0x27324a,roughness:.8}));
+  panel.position.set(X(BOARD.x+BOARD.w/2),Y(BOARD.y+BOARD.h/2),-7);panel.receiveShadow=true;scene.add(panel);
+  const slotGeo=extrude(64,48,12,4,1);
+  const slotMat=new THREE.MeshStandardMaterial({color:0x0f141d,roughness:.9});
+  for(let j=0;j<4;j++){
+    const m=new THREE.Mesh(slotGeo,slotMat);
+    m.position.set(X(20+(j+.5)*80),Y(BUF_Y),1);m.receiveShadow=true;scene.add(m);bufMeshes.push(m);
+  }
+})();
+
+// screws
+const headGeo=new THREE.CylinderGeometry(11,11,5,28);headGeo.rotateX(Math.PI/2);
+const sl1=new THREE.BoxGeometry(15,2.8,1.6),sl2=new THREE.BoxGeometry(2.8,15,1.6);
+const hitGeo=new THREE.CylinderGeometry(19,19,6,12);hitGeo.rotateX(Math.PI/2);
+const slotDark=new THREE.MeshStandardMaterial({color:0x1a1a1a,roughness:.8});
+const hitMat=new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false});
+const screwMats={};
+function screwMat(c){return screwMats[c]||(screwMats[c]=new THREE.MeshStandardMaterial({color:c,roughness:.35,metalness:.3}))}
+function makeScrew(color){
+  const g=new THREE.Group();
+  const head=new THREE.Mesh(headGeo,screwMat(color));head.castShadow=true;g.add(head);
+  const a=new THREE.Mesh(sl1,slotDark),b=new THREE.Mesh(sl2,slotDark);
+  a.position.z=b.position.z=2.3;g.add(a,b);
+  const hit=new THREE.Mesh(hitGeo,hitMat);g.add(hit);
+  g.userData.hit=hit;return g;
+}
+const holeGeo=new THREE.CircleGeometry(6.5,20);
+const boxRecGeo=new THREE.CylinderGeometry(14,14,1,24);boxRecGeo.rotateX(Math.PI/2);
+const boxRecMat=new THREE.MeshStandardMaterial({color:0x111111,roughness:.9});
+
+// game state
+let level=1;
+try{const v=parseInt(localStorage.getItem('screw_level')||'1',10);if(v>0)level=v}catch(e){}
+let plates=[],boxes=[null,null],queue=[],buffer=[null,null,null,null],flying=[];
+let bufN=4;
+const bufX=j=>20+(j+.5)*(320/bufN);
+let state='play',t=0,lastRem=-1;
+
+const mk=(dx,dy)=>({dx,dy,color:null,state:'on',rot:rnd(0,6.28),shake:0,mesh:null,hole:null});
+
+function clearScene(){
+  while(pickGroup.children.length)pickGroup.remove(pickGroup.children[0]);
+  while(dynGroup.children.length)dynGroup.remove(dynGroup.children[0]);
+}
+
+function buildPlate(p){
+  const g=new THREE.Group();
+  const mat=new THREE.MeshStandardMaterial({color:p.color,roughness:.5,metalness:.2,transparent:true});
+  const body=new THREE.Mesh(extrude(p.w,p.h,10,6,1.5),mat);
+  body.castShadow=true;body.receiveShadow=true;
+  body.userData.ref={kind:'plate',p};g.add(body);
+  p.body=body;p.mat=mat;
+  p.holeMat=new THREE.MeshBasicMaterial({color:0x0a0d12,transparent:true});
+  for(const s of p.screws){
+    const m=makeScrew(s.color);
+    m.position.set(s.dx,-s.dy,4.5+2.5);m.rotation.z=s.rot;
+    m.userData.hit.userData.ref={kind:'screw',p,s};
+    g.add(m);s.mesh=m;
+    const h=new THREE.Mesh(holeGeo,p.holeMat);
+    h.position.set(s.dx,-s.dy,4.6);h.visible=false;g.add(h);s.hole=h;
+  }
+  p.group=g;p.op=1;p.opT=1;p.z0=Z0+p.layer*LZ;
+  pickGroup.add(g);
+}
+
+function buildBox(b,i){
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(extrude(150,64,12,10,2),new THREE.MeshStandardMaterial({color:b.color,roughness:.45,metalness:.15}));
+  body.castShadow=true;body.receiveShadow=true;g.add(body);
+  for(let n=0;n<3;n++){
+    const r=new THREE.Mesh(boxRecGeo,boxRecMat);r.position.set(-45+n*45,0,7.4);g.add(r);
+  }
+  g.position.set(X(20+i*170+75),Y(52),0);
+  g.scale.setScalar(.001);
+  dynGroup.add(g);b.group=g;b.age=0;
+}
+function newBox(i){
+  const c=queue.shift();if(!c)return null;
+  const b={color:c,filled:0,reserved:0,done:0};buildBox(b,i);return b;
+}
+
+function genLevel(L){
+  clearScene();
+  plates=[];flying=[];bufN=L>=10?3:4;buffer=new Array(bufN).fill(null);boxes=[null,null];queue=[];state='play';lastRem=-1;
+  bufMeshes.forEach((m,j)=>{m.visible=j<bufN;if(j<bufN)m.position.x=X(bufX(j))});
+  document.getElementById('overlay').style.display='none';
+  document.getElementById('lvl').textContent='Nivel '+L;
+  const n=Math.min(3+L,16);
+  for(let i=0;i<n;i++){
+    const sf=Math.max(.6,1-.025*(L-1));
+    const w=rnd(120,200)*sf,h=Math.max(36,rnd(46,76)*sf);
+    const vertical=Math.random()<0.3;
+    const ang=(vertical?Math.PI/2:0)+rnd(-0.7,0.7);
+    const hx=Math.abs(Math.cos(ang))*w/2+Math.abs(Math.sin(ang))*h/2;
+    const hy=Math.abs(Math.sin(ang))*w/2+Math.abs(Math.cos(ang))*h/2;
+    const x=rnd(BOARD.x+hx,BOARD.x+BOARD.w-hx);
+    const y=rnd(BOARD.y+hy,BOARD.y+BOARD.h-hy);
+    const a=w/2-15,b=Math.max(8,h/2-14);
+    const r=Math.random();
+    let pts;
+    if(Math.random()<(L>=4?Math.min(.3,.05*(L-3)):0))pts=[[(Math.random()<.5?-1:1)*a*rnd(.4,1),0]];
+    else if(r<.35)pts=[[-a,0],[a,0]];
+    else if(r<.6&&w>=130)pts=[[-a,0],[0,0],[a,0]];
+    else if(r<.8)pts=[[-a,-b],[a,b]];
+    else pts=[[-a,-b],[a,-b],[0,b]];
+    plates.push({
+      x,y,w,h,ang,layer:i,falling:false,vy:0,vr:0,om:0,
+      color:PLATE_COLORS[Math.floor(Math.random()*PLATE_COLORS.length)],
+      screws:pts.map(p=>mk(p[0],p[1]))
+    });
+  }
+  let T=plates.reduce((s,p)=>s+p.screws.length,0);
+  let guard=0;
+  while(T%3!==0&&guard++<400){
+    const p=plates[Math.floor(Math.random()*n)];
+    const dx=rnd(-(p.w/2-15),p.w/2-15),dy=rnd(-(p.h/2-14),p.h/2-14);
+    if(p.screws.every(s=>Math.hypot(s.dx-dx,s.dy-dy)>26)){p.screws.push(mk(dx,dy));T++}
+  }
+  while(T%3!==0){
+    const p=plates.slice().sort((a,b)=>b.screws.length-a.screws.length)[0];
+    p.screws.pop();T--;
+  }
+  const K=T/3;
+  const nc=Math.min(Math.max(2,2+Math.floor((L+1)/2)),COLORS.length,K);
+  const pool=[];
+  for(let i=0;i<K;i++){const c=COLORS[i%nc];pool.push(c,c,c)}
+  shuffle(pool);
+  let idx=0;
+  plates.forEach(p=>p.screws.forEach(s=>{s.color=pool[idx++]}));
+  const depth={},cnt={};
+  plates.forEach(p=>p.screws.forEach(s=>{
+    depth[s.color]=(depth[s.color]||0)+(n-1-p.layer);cnt[s.color]=(cnt[s.color]||0)+1;
+  }));
+  const entries=[];
+  Object.keys(cnt).forEach(c=>{
+    for(let k=0;k<cnt[c]/3;k++)entries.push({color:c,key:depth[c]/cnt[c]+rnd(0,Math.min(6,1.6+.3*L))});
+  });
+  entries.sort((a,b)=>a.key-b.key);
+  queue=entries.map(e=>e.color);
+  plates.forEach(buildPlate);
+  boxes[0]=newBox(0);boxes[1]=newBox(1);
+}
+
+// geometry/logic (2D plane of the wall, y down)
+function sp(p,s){
+  const c=Math.cos(p.ang),sn=Math.sin(p.ang);
+  return {x:p.x+s.dx*c-s.dy*sn,y:p.y+s.dx*sn+s.dy*c};
+}
+function inRect(q,pt,m){
+  const dx=pt.x-q.x,dy=pt.y-q.y,c=Math.cos(q.ang),sn=Math.sin(q.ang);
+  const lx=dx*c+dy*sn,ly=-dx*sn+dy*c;
+  return Math.abs(lx)<=q.w/2+m&&Math.abs(ly)<=q.h/2+m;
+}
+function isFree(p,s){
+  if(s.state!=='on')return false;
+  const pos=sp(p,s);
+  for(const q of plates){
+    if(q.layer>p.layer&&!q.falling&&inRect(q,pos,7))return false;
+  }
+  return true;
+}
+function targetFor(color){
+  for(let i=0;i<2;i++){
+    const b=boxes[i];
+    if(b&&!b.done&&b.color===color&&b.filled+b.reserved<3)return {type:'box',i};
+  }
+  const j=buffer.findIndex(x=>x===null);
+  if(j>=0)return {type:'buf',i:j};
+  return null;
+}
+function launch(x,y,z0,color,target,mesh){
+  let tx,ty,k=0;
+  if(target.type==='box'){
+    const b=boxes[target.i];k=b.filled+b.reserved;
+    tx=20+target.i*170+75-75+75+(-45+k*45);ty=52;b.reserved++;
+  }else{
+    tx=bufX(target.i);ty=BUF_Y;buffer[target.i]={color,reserved:true,mesh};
+  }
+  flying.push({x0:x,y0:y,z0,tx,ty,color,t:0,target,k,mesh,spin:rnd(6,12)});
+}
+function takeScrew(p,s){
+  const target=targetFor(s.color);
+  if(!target){s.shake=.3;return}
+  const pos=sp(p,s),z=p.z0+7;
+  s.state='fly';
+  const m=s.mesh;dynGroup.add(m);
+  m.rotation.set(0,0,s.rot);m.position.set(X(pos.x),Y(pos.y),z);
+  s.hole.visible=true;
+  launch(pos.x,pos.y,z,s.color,target,m);
+  if(p.screws.every(q=>q.state!=='on')){p.falling=true;p.vy=0;p.vr=p.om||rnd(-2,2)}
+}
+
+// input: tap = act, drag = orbit camera
+const ray=new THREE.Raycaster(),ndc=new THREE.Vector2();
+function tap(cx,cy){
+  if(state!=='play')return;
+  const r=renderer.domElement.getBoundingClientRect();
+  ndc.set((cx-r.left)/r.width*2-1,-((cy-r.top)/r.height)*2+1);
+  ray.setFromCamera(ndc,camera);
+  const hits=ray.intersectObjects(pickGroup.children,true);
+  for(const h of hits){
+    const ref=h.object.userData.ref;if(!ref)continue;
+    if(ref.kind==='screw'){
+      if(ref.s.state!=='on')continue;
+      if(isFree(ref.p,ref.s))takeScrew(ref.p,ref.s);else ref.s.shake=.3;
+      return;
+    }
+    if(ref.kind==='plate'){
+      if(ref.p.falling)continue;
+      ref.p.opT=ref.p.opT<.5?1:GHOST;
+      ref.p.body.castShadow=ref.p.opT>.5;
+      return;
+    }
+  }
+  plates.forEach(p=>{p.opT=1;p.body.castShadow=true});
+}
+let yaw=.16,pitch=.1,dist=1100,down=null,dragging=false;
+const cv=renderer.domElement;
+cv.addEventListener('pointerdown',e=>{down={x:e.clientX,y:e.clientY,lx:e.clientX,ly:e.clientY};dragging=false;try{cv.setPointerCapture(e.pointerId)}catch(_){}});
+cv.addEventListener('pointermove',e=>{
+  if(!down)return;
+  if(!dragging&&Math.hypot(e.clientX-down.x,e.clientY-down.y)>8)dragging=true;
+  if(dragging){
+    yaw=Math.max(-.75,Math.min(.75,yaw+(e.clientX-down.lx)*.005));
+    pitch=Math.max(-.45,Math.min(.6,pitch-(e.clientY-down.ly)*.005));
+  }
+  down.lx=e.clientX;down.ly=e.clientY;
+});
+cv.addEventListener('pointerup',e=>{if(down&&!dragging)tap(e.clientX,e.clientY);down=null;dragging=false});
+cv.addEventListener('pointercancel',()=>{down=null;dragging=false});
+
+function resize(){
+  const w=wrap.clientWidth,h=wrap.clientHeight;if(!w||!h)return;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+  renderer.setSize(w,h);
+  camera.aspect=w/h;camera.updateProjectionMatrix();
+  const tanH=Math.tan(THREE.MathUtils.degToRad(camera.fov/2));
+  dist=Math.max(335/tanH,190/(tanH*camera.aspect))*1.2;
+}
+window.addEventListener('resize',resize);
+if(window.ResizeObserver)new ResizeObserver(resize).observe(wrap);
+
+function dispatchBuffer(){
+  for(let j=0;j<buffer.length;j++){
+    const it=buffer[j];
+    if(!it||it.reserved)continue;
+    for(let i=0;i<2;i++){
+      const b=boxes[i];
+      if(b&&!b.done&&b.color===it.color&&b.filled+b.reserved<3){
+        buffer[j]=null;
+        launch(bufX(j),BUF_Y,ZEND,it.color,{type:'box',i},it.mesh);
+        break;
+      }
+    }
+  }
+}
+function anyMove(){
+  for(const p of plates)for(const s of p.screws){
+    if(isFree(p,s)&&targetFor(s.color))return true;
+  }
+  return false;
+}
+function show(title,text,btn,fn){
+  document.getElementById('ovT').textContent=title;
+  document.getElementById('ovP').textContent=text;
+  const b=document.getElementById('ovB');b.textContent=btn;b.onclick=fn;
+  document.getElementById('overlay').style.display='flex';
+}
+function checkEnd(){
+  if(state!=='play'||flying.length)return;
+  if(boxes.some(b=>b&&b.done))return;
+  const remaining=plates.some(p=>p.screws.some(s=>s.state==='on'));
+  if(!remaining){
+    if(buffer.every(x=>!x)){
+      state='win';
+      show('Nivel complet!','Toate șuruburile au ajuns în cutii.','Nivelul următor',()=>{
+        level++;try{localStorage.setItem('screw_level',String(level))}catch(e){}
+        genLevel(level);
+      });
+    }
+    return;
+  }
+  if(buffer.every(x=>x&&!x.reserved)&&!anyMove()){
+    state='lose';
+    show('Rezerva e plină','Nu mai ai nicio mutare posibilă.','Reîncearcă',()=>genLevel(level));
+  }
+}
+
+// gravity: a plate held by one screw swings like a pendulum; with none it falls
+function physics(p,dt){
+  if(p.falling){
+    p.vy+=G*1.2*dt;p.y+=p.vy*dt;p.ang+=p.vr*dt;return;
+  }
+  const on=p.screws.filter(s=>s.state==='on');
+  if(on.length===1){
+    const piv=sp(p,on[0]);
+    let dx=p.x-piv.x,dy=p.y-piv.y;
+    if(Math.abs(dx)<.01)dx=.01;
+    const k=dx*dx+dy*dy+(p.w*p.w+p.h*p.h)/12;
+    p.om+=(dx*G/k)*dt;
+    p.om*=Math.max(0,1-1.1*dt);
+    p.om=Math.max(-8,Math.min(8,p.om));
+    const th=p.om*dt,c=Math.cos(th),s=Math.sin(th);
+    p.x=piv.x+dx*c-dy*s;p.y=piv.y+dx*s+dy*c;p.ang+=th;
+  }else p.om=0;
+}
+
+function update(dt){
+  t+=dt;
+  for(const p of plates)physics(p,dt);
+  for(const p of plates)if(p.y>H+320){pickGroup.remove(p.group)}
+  plates=plates.filter(p=>p.y<=H+320);
+  for(let i=flying.length-1;i>=0;i--){
+    const f=flying[i];f.t+=dt/.4;
+    if(f.t>=1){
+      if(f.target.type==='box'){
+        const b=boxes[f.target.i];
+        if(b){
+          b.filled++;b.reserved--;
+          b.group.add(f.mesh);f.mesh.position.set(-45+f.k*45,0,ZEND);f.mesh.rotation.set(0,0,f.k*1.3);
+          if(b.filled>=3&&!b.done)b.done=.001;
+        }
+      }else{
+        const it=buffer[f.target.i];
+        if(it){it.reserved=false;f.mesh.position.set(X(f.tx),Y(f.ty),ZEND);f.mesh.rotation.set(0,0,0)}
+      }
+      flying.splice(i,1);
+    }
+  }
+  for(let i=0;i<2;i++){
+    const b=boxes[i];if(!b)continue;
+    b.age+=dt;
+    if(b.done){
+      b.done+=dt;
+      if(b.done>.45){dynGroup.remove(b.group);boxes[i]=newBox(i);continue}
+    }
+    const e=Math.min(1,b.age/.3);
+    const k=Math.max(.001,(1-Math.pow(1-e,3))*(b.done?Math.max(0,1-b.done/.45):1));
+    b.group.scale.setScalar(k);
+  }
+  if(state==='play'){dispatchBuffer();checkEnd()}
+  syncVisuals(dt);
+}
+
+function syncVisuals(dt){
+  let rem=0;
+  for(const p of plates){
+    const g=p.group;
+    g.position.set(X(p.x),Y(p.y),p.z0);
+    g.rotation.z=-p.ang;
+    let tgt=p.opT;
+    if(p.falling)tgt=Math.min(tgt,Math.max(0,Math.min(1,1-(p.y-(BOARD.y+BOARD.h))/220)));
+    p.op+=(tgt-p.op)*Math.min(1,dt*10);
+    p.mat.opacity=p.op;p.holeMat.opacity=p.op;
+    p.mat.depthWrite=p.op>.97;
+    for(const s of p.screws){
+      if(s.state==='on'){
+        rem++;
+        if(s.shake>0){s.shake-=dt;s.mesh.position.x=s.dx+Math.sin(s.shake*70)*3}
+        else s.mesh.position.x=s.dx;
+      }
+    }
+  }
+  if(rem!==lastRem){lastRem=rem;document.getElementById('rem').textContent=rem+' șuruburi, rezervă '+bufN}
+  for(const f of flying){
+    const e=f.t<.5?2*f.t*f.t:1-Math.pow(-2*f.t+2,2)/2;
+    f.mesh.position.set(
+      X(f.x0+(f.tx-f.x0)*e),
+      Y(f.y0+(f.ty-f.y0)*e),
+      f.z0+(ZEND-f.z0)*e+Math.sin(Math.PI*f.t)*70
+    );
+    f.mesh.rotation.z=f.spin*f.t;
+  }
+  camera.position.set(Math.sin(yaw)*Math.cos(pitch)*dist,Math.sin(pitch)*dist,30+Math.cos(yaw)*Math.cos(pitch)*dist);
+  camera.lookAt(0,0,30);
+}
+
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(.05,(now-last)/1000);last=now;
+  update(dt);
+  renderer.render(scene,camera);
+  requestAnimationFrame(loop);
+}
+
+document.getElementById('restart').addEventListener('click',()=>genLevel(level));
+resize();genLevel(level);
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
