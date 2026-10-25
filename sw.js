@@ -1,5 +1,5 @@
 // Mărește VERSION la fiecare modificare a fișierelor pentru a invalida cache-ul.
-const VERSION='v18';
+const VERSION='v20';
 const CACHE='games-'+VERSION;
 const PRECACHE=[
   './',
@@ -10,6 +10,9 @@ const PRECACHE=[
   'icons/icon.svg',
   'icons/solitaire.svg',
   'icons/mahjong.svg',
+  'icons/arrows.svg',
+  'icons/watersort.svg',
+  'icons/sudoku.svg',
   'icons/icon-192.png',
   'icons/icon-512.png',
   'icons/icon-maskable-512.png',
@@ -23,7 +26,16 @@ const PRECACHE=[
   'apps/mahjong/index.html',
   'apps/mahjong/engine.js',
   'apps/mahjong/layouts.js',
-  'apps/mahjong/editor.html'
+  'apps/mahjong/editor.html',
+  'apps/arrows/',
+  'apps/arrows/index.html',
+  'apps/arrows/engine.js',
+  'apps/watersort/',
+  'apps/watersort/index.html',
+  'apps/watersort/engine.js',
+  'apps/sudoku/',
+  'apps/sudoku/index.html',
+  'apps/sudoku/engine.js'
 ];
 
 self.addEventListener('install',e=>{

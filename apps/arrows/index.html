@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Săgeți</title>
+<link rel="manifest" href="../../manifest.webmanifest">
+<meta name="theme-color" content="#16202e">
+<link rel="icon" href="../../icons/arrows.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../../icons/icon-192.png">
+<style>
+:root{--bg:#16202e;--bg2:#101823;--fg:#eef3fa;--btn:#eef3fa;--btnfg:#101823}
+html,body{height:100%;margin:0}
+body{
+  background:radial-gradient(circle at 50% 30%,#22344b,var(--bg2));color:var(--fg);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  display:flex;flex-direction:column;overflow:hidden;
+  -webkit-user-select:none;user-select:none;touch-action:manipulation;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+}
+header{width:100%;max-width:900px;margin:0 auto;box-sizing:border-box;padding:8px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#home{color:var(--fg);text-decoration:none;font-size:22px;line-height:1;padding:4px 6px}
+h1{font-size:18px;margin:0;font-weight:700}
+#info{font-size:14px;opacity:.9;flex:1;min-width:80px}
+.btns{display:flex;gap:6px;flex-wrap:wrap}
+button{font:inherit;font-size:14px;font-weight:600;border:0;border-radius:10px;padding:7px 11px;background:var(--btn);color:var(--btnfg);cursor:pointer}
+button:disabled{opacity:.4;cursor:default}
+button:focus-visible{outline:3px solid #fff;outline-offset:2px}
+#wrap{flex:1;min-height:0;position:relative;width:100%;overflow:hidden;display:flex;align-items:center;justify-content:center}
+svg{display:block;overflow:hidden;touch-action:manipulation}
+.dot{fill:rgba(255,255,255,.14)}
+.body{fill:none;stroke-linecap:round;stroke-linejoin:round}
+.hit{fill:none;stroke:transparent;stroke-linecap:round;stroke-linejoin:round;pointer-events:stroke;cursor:pointer}
+.hint{animation:pulse .5s ease-in-out 4}
+.shake{animation:shake .3s}
+.warn .body,.warn .head{stroke:#ff5d5d;stroke-width:.06}
+@keyframes pulse{50%{opacity:.25}}
+@keyframes shake{25%{translate:-.08px 0}75%{translate:.08px 0}}
+#toast{position:absolute;left:50%;top:10px;transform:translateX(-50%);background:rgba(0,0,0,.75);color:#fff;padding:8px 14px;border-radius:10px;font-size:14px;display:none;z-index:50;max-width:90%;text-align:center}
+#overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55);z-index:60}
+#overlay .box{background:#fff;color:#111;padding:22px 26px;border-radius:16px;text-align:center;min-width:220px;max-width:85%}
+#overlay h2{margin:0 0 6px;font-size:22px}
+#overlay p{margin:0 0 14px;color:#555;font-size:14px}
+#overlay button{background:#16202e;color:#fff;margin:4px}
+</style>
+</head>
+<body>
+<header>
+  <a id="home" href="../../" aria-label="Înapoi la colecție">&#8592;</a>
+  <h1 id="lvl">Nivel 1</h1>
+  <span id="info"></span>
+  <div class="btns">
+    <button id="hint" type="button">Indiciu</button>
+    <button id="retry" type="button">Reîncearcă</button>
+    <button id="fresh" type="button">Nivel random</button>
+  </div>
+</header>
+<div id="wrap">
+  <div id="toast"></div>
+  <div id="overlay"><div class="box"><h2 id="ovT"></h2><p id="ovP"></p><button id="ovB" type="button"></button><button id="ovB2" type="button"></button></div></div>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function(){
+const NS='http://www.w3.org/2000/svg';
+const wrap=document.getElementById('wrap'),infoEl=document.getElementById('info'),lvlEl=document.getElementById('lvl');
+const overlay=document.getElementById('overlay'),toastEl=document.getElementById('toast');
+const COLORS=['#ff7a59','#4cc9f0','#a0e36b','#f7c948','#c77dff','#ff6fae','#2ec4b6','#ffa94d'];
+
+let level=1;
+try{const v=parseInt(localStorage.getItem('arrows_level')||'1',10);if(v>0)level=v}catch(e){}
+let seed=0,game=null,alive=[],lives=3,moves=0,over=false,els=[],svg=null,cell=40,busyAnims=0;
+
+function toast(m,ms){toastEl.textContent=m;toastEl.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>{toastEl.style.display='none'},ms||2000)}
+function el(name,attrs,parent){const e=document.createElementNS(NS,name);for(const k in attrs)e.setAttribute(k,attrs[k]);if(parent)parent.appendChild(e);return e}
+
+function start(L,sameSeed){
+  level=L;
+  if(!sameSeed)seed=Math.floor(Math.random()*4294967296);
+  game=AR.gen(L,seed);
+  alive=game.arrows.map(()=>true);
+  lives=game.p.lives;moves=0;over=false;busyAnims=0;
+  overlay.style.display='none';
+  lvlEl.textContent='Nivel '+L;
+  build();refreshInfo();
+}
+
+function refreshInfo(){
+  const n=alive.filter(Boolean).length;
+  infoEl.textContent=n+' săgeți · '+'♥'.repeat(lives)+'♡'.repeat(Math.max(0,game.p.lives-lives));
+}
+
+// punctul de pe drumul extins al săgeții (cărămizi + rază + ieșire), în unități de celulă
+function extended(a){
+  const pts=a.path.map(c=>[c[0]+.5,c[1]+.5]);
+  const d=AR.DIRS[a.dir],ray=AR.rayCells(a,game.p);
+  for(const c of ray)pts.push([c[0]+.5,c[1]+.5]);
+  let last=pts[pts.length-1];
+  for(let k=1;k<=a.path.length+1;k++)pts.push([last[0]+d[0]*k,last[1]+d[1]*k]);
+  return {pts,start:0,inside:a.path.length+ray.length};
+}
+function posAt(pts,u){
+  const i=Math.min(pts.length-2,Math.max(0,Math.floor(u))),f=u-i;
+  return [pts[i][0]+(pts[i+1][0]-pts[i][0])*f,pts[i][1]+(pts[i+1][1]-pts[i][1])*f];
+}
+function windowPts(pts,s0,s1){
+  const out=[posAt(pts,s0)];
+  for(let k=Math.floor(s0)+1;k<s1;k++)out.push(pts[k]);
+  out.push(posAt(pts,s1));
+  return out;
+}
+function render(a,s){
+  const e=els[a.id],n=a.path.length,x=extended(a);
+  const w=windowPts(x.pts,s,s+n-1);
+  e.body.setAttribute('points',w.map(p=>p[0].toFixed(3)+','+p[1].toFixed(3)).join(' '));
+  e.hit.setAttribute('points',e.body.getAttribute('points'));
+  const h=w[w.length-1],pv=w[w.length-2]||w[0];
+  let dx=h[0]-pv[0],dy=h[1]-pv[1];const l=Math.hypot(dx,dy)||1;dx/=l;dy/=l;
+  const px=-dy,py=dx,tip=[h[0]+dx*.46,h[1]+dy*.46],b=[h[0]-dx*.08,h[1]-dy*.08];
+  e.head.setAttribute('points',[tip,[b[0]+px*.3,b[1]+py*.3],[b[0]-px*.3,b[1]-py*.3]].map(p=>p[0].toFixed(3)+','+p[1].toFixed(3)).join(' '));
+}
+
+function build(){
+  wrap.querySelectorAll('svg').forEach(s=>s.remove());
+  const W=wrap.clientWidth,H=wrap.clientHeight,p=game.p,pad=8;
+  cell=Math.max(18,Math.floor(Math.min((W-pad*2)/p.cols,(H-pad*2)/p.rows)));
+  svg=el('svg',{viewBox:'0 0 '+p.cols+' '+p.rows,width:cell*p.cols,height:cell*p.rows});
+  wrap.insertBefore(svg,wrap.firstChild);
+  for(let y=0;y<p.rows;y++)for(let x=0;x<p.cols;x++)el('circle',{cx:x+.5,cy:y+.5,r:.05,class:'dot'},svg);
+  els=[];
+  for(const a of game.arrows){
+    const g=el('g',{},svg),color=COLORS[a.id%COLORS.length];
+    const body=el('polyline',{class:'body',stroke:color,'stroke-width':.3},g);
+    const head=el('polygon',{class:'head',fill:color,stroke:color,'stroke-width':.02,'stroke-linejoin':'round'},g);
+    const hit=el('polyline',{class:'hit','stroke-width':.85},g);
+    els[a.id]={g,body,head,hit};
+    hit.addEventListener('pointerdown',e=>{e.preventDefault();tap(a)});
+    render(a,0);
+  }
+}
+
+function currentOcc(){return AR.occupancy(game.p,game.arrows,alive)}
+
+function tap(a){
+  if(over||!alive[a.id])return;
+  const b=AR.blocker(a,game.p,currentOcc());
+  if(b===-1){
+    alive[a.id]=false;moves++;
+    animateOut(a);
+    refreshInfo();
+    if(!alive.some(Boolean))win();
+  }else{
+    lives--;
+    const e=els[a.id].g;e.classList.remove('shake');void e.getBoundingClientRect();e.classList.add('shake');
+    const bg=els[b].g;bg.classList.add('warn');setTimeout(()=>bg.classList.remove('warn'),700);
+    refreshInfo();
+    if(lives<=0)lose();
+  }
+}
+
+function animateOut(a){
+  const x=extended(a),total=x.inside,n=a.path.length;
+  const t0=performance.now(),speed=16;
+  busyAnims++;
+  (function step(now){
+    const s=Math.min(total,(now-t0)/1000*speed);
+    render(a,s);
+    if(s<total)requestAnimationFrame(step);
+    else{els[a.id].g.style.display='none';busyAnims--}
+  })(t0);
+}
+
+function win(){
+  over=true;
+  try{localStorage.setItem('arrows_level',String(level+1))}catch(e){}
+  setTimeout(()=>showOverlay('Nivel '+level+' complet!','Ai scos toate săgețile în '+moves+' mutări.','Nivelul următor',()=>start(level+1)),450);
+}
+function lose(){
+  over=true;
+  showOverlay('Ai rămas fără vieți','Fiecare săgeată blocată costă o viață.','Reîncearcă',()=>start(level,true),'Nivel random',()=>start(level));
+}
+function showOverlay(t,p,b1,f1,b2,f2){
+  document.getElementById('ovT').textContent=t;document.getElementById('ovP').textContent=p;
+  const B=document.getElementById('ovB'),B2=document.getElementById('ovB2');
+  B.textContent=b1;B.onclick=f1;
+  B2.hidden=!b2;if(b2){B2.textContent=b2;B2.onclick=f2}
+  overlay.style.display='flex';
+}
+
+document.getElementById('hint').addEventListener('click',()=>{
+  if(over)return;
+  const occ=currentOcc(),free=game.arrows.filter(a=>alive[a.id]&&AR.blocker(a,game.p,occ)===-1);
+  if(!free.length)return;
+  const a=free[Math.floor(Math.random()*free.length)],g=els[a.id].g;
+  g.classList.remove('hint');void g.getBoundingClientRect();g.classList.add('hint');
+});
+document.getElementById('retry').addEventListener('click',()=>{if(!moves&&lives===game.p.lives||over||confirm('Reiei același puzzle de la început?'))start(level,true)});
+document.getElementById('fresh').addEventListener('click',()=>{if(!moves&&lives===game.p.lives||over||confirm('Generezi alt puzzle random pentru acest nivel?'))start(level)});
+
+if(window.ResizeObserver)new ResizeObserver(()=>{if(game){build();game.arrows.forEach(a=>{if(!alive[a.id])els[a.id].g.style.display='none'})}}).observe(wrap);
+
+start(level);
+})();
+</script>
+<script src="../../breaks.js"></script>
+<script src="../../pwa.js"></script>
+</body>
+</html>

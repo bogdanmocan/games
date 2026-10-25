@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sortare culori</title>
+<link rel="manifest" href="../../manifest.webmanifest">
+<meta name="theme-color" content="#1b2a3a">
+<link rel="icon" href="../../icons/watersort.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../../icons/icon-192.png">
+<style>
+:root{--bg:#1b2a3a;--bg2:#121c27;--fg:#eef3fa;--btn:#eef3fa;--btnfg:#121c27}
+html,body{height:100%;margin:0}
+body{
+  background:radial-gradient(circle at 50% 30%,#26405a,var(--bg2));color:var(--fg);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  display:flex;flex-direction:column;overflow:hidden;
+  -webkit-user-select:none;user-select:none;touch-action:manipulation;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+}
+header{width:100%;max-width:900px;margin:0 auto;box-sizing:border-box;padding:8px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#home{color:var(--fg);text-decoration:none;font-size:22px;line-height:1;padding:4px 6px}
+h1{font-size:18px;margin:0;font-weight:700}
+#info{font-size:14px;opacity:.9;flex:1;min-width:70px}
+.btns{display:flex;gap:6px;flex-wrap:wrap}
+button{font:inherit;font-size:14px;font-weight:600;border:0;border-radius:10px;padding:7px 11px;background:var(--btn);color:var(--btnfg);cursor:pointer}
+button:disabled{opacity:.4;cursor:default}
+button:focus-visible{outline:3px solid #fff;outline-offset:2px}
+#wrap{flex:1;min-height:0;position:relative;width:100%;overflow:auto;display:flex;align-items:center;justify-content:center}
+#board{display:flex;flex-wrap:wrap;justify-content:center;align-content:center;gap:18px 14px;padding:24px 12px;max-width:640px}
+.tube{
+  position:relative;box-sizing:border-box;width:var(--tw);height:calc(var(--uh)*4 + 14px);
+  border:3px solid rgba(255,255,255,.55);border-top-color:rgba(255,255,255,.2);
+  border-radius:6px 6px calc(var(--tw)/2) calc(var(--tw)/2);padding:4px 3px 3px;
+  display:flex;flex-direction:column-reverse;gap:0;cursor:pointer;
+  transition:transform .15s;background:rgba(255,255,255,.05)
+}
+.tube.sel{transform:translateY(-16px);border-color:#ffd54f}
+.tube.shake{animation:shake .25s}
+.tube.hint{animation:pulse .5s ease-in-out 4}
+.u{height:var(--uh);flex:none;border-radius:3px;box-shadow:inset 0 -2px 0 rgba(0,0,0,.18)}
+.u:first-child{border-radius:3px 3px calc(var(--tw)/2 - 4px) calc(var(--tw)/2 - 4px)}
+@keyframes shake{25%{translate:-4px 0}75%{translate:4px 0}}
+@keyframes pulse{50%{opacity:.3}}
+#toast{position:absolute;left:50%;top:10px;transform:translateX(-50%);background:rgba(0,0,0,.75);color:#fff;padding:8px 14px;border-radius:10px;font-size:14px;display:none;z-index:50;max-width:90%;text-align:center}
+#overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55);z-index:60}
+#overlay .box{background:#fff;color:#111;padding:22px 26px;border-radius:16px;text-align:center;min-width:220px;max-width:85%}
+#overlay h2{margin:0 0 6px;font-size:22px}
+#overlay p{margin:0 0 14px;color:#555;font-size:14px}
+#overlay button{background:#1b2a3a;color:#fff}
+</style>
+</head>
+<body>
+<header>
+  <a id="home" href="../../" aria-label="Înapoi la colecție">&#8592;</a>
+  <h1 id="lvl">Nivel 1</h1>
+  <span id="info"></span>
+  <div class="btns">
+    <button id="undo" type="button">Înapoi</button>
+    <button id="extra" type="button">Tub extra</button>
+    <button id="retry" type="button">Reîncearcă</button>
+    <button id="fresh" type="button">Nivel random</button>
+  </div>
+</header>
+<div id="wrap">
+  <div id="board"></div>
+  <div id="toast"></div>
+  <div id="overlay"><div class="box"><h2 id="ovT"></h2><p id="ovP"></p><button id="ovB" type="button"></button></div></div>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function(){
+const board=document.getElementById('board'),wrap=document.getElementById('wrap');
+const overlay=document.getElementById('overlay'),toastEl=document.getElementById('toast');
+const COLORS=['#e5484d','#3b82f6','#22c55e','#f5b301','#a855f7','#f97316','#14b8a6','#ec4899','#84cc16','#06b6d4','#8b5e3c','#9ca3af'];
+
+let level=1;
+try{const v=parseInt(localStorage.getItem('watersort_level')||'1',10);if(v>0)level=v}catch(e){}
+let seed=0,initial=null,tubes=[],undo=[],sel=-1,moves=0,extraUsed=false,done=false;
+
+function toast(m,ms){toastEl.textContent=m;toastEl.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>{toastEl.style.display='none'},ms||2200)}
+
+function start(L,sameSeed){
+  level=L;
+  if(!sameSeed)seed=Math.floor(Math.random()*4294967296);
+  const g=WS.gen(L,seed);
+  initial=JSON.stringify(g.tubes);
+  tubes=g.tubes.map(t=>t.slice());
+  undo=[];sel=-1;moves=0;extraUsed=false;done=false;
+  overlay.style.display='none';
+  document.getElementById('lvl').textContent='Nivel '+L;
+  render();
+}
+
+function sizes(){
+  const n=tubes.length,W=Math.min(wrap.clientWidth,640)-24;
+  const perRow=Math.min(n,Math.max(3,Math.floor(W/62)));
+  const tw=Math.max(34,Math.min(58,Math.floor((W-(perRow-1)*14)/perRow)));
+  board.style.setProperty('--tw',tw+'px');
+  board.style.setProperty('--uh',Math.round(tw*.62)+'px');
+}
+
+function render(){
+  sizes();
+  board.textContent='';
+  tubes.forEach((t,i)=>{
+    const d=document.createElement('div');
+    d.className='tube'+(i===sel?' sel':'');
+    d.setAttribute('role','button');d.setAttribute('aria-label','Tub '+(i+1));
+    for(const c of t){const u=document.createElement('div');u.className='u';u.style.background=COLORS[c];d.appendChild(u)}
+    d.addEventListener('pointerdown',e=>{e.preventDefault();tapTube(i)});
+    board.appendChild(d);
+  });
+  document.getElementById('info').textContent=moves+' mutări';
+  document.getElementById('undo').disabled=!undo.length;
+  document.getElementById('extra').disabled=extraUsed||done;
+}
+
+function shake(i){const d=board.children[i];if(!d)return;d.classList.remove('shake');void d.offsetWidth;d.classList.add('shake')}
+
+function tapTube(i){
+  if(done)return;
+  if(sel<0){
+    if(!tubes[i].length){shake(i);return}
+    sel=i;render();return;
+  }
+  if(sel===i){sel=-1;render();return}
+  if(WS.canPour(tubes,sel,i)){
+    undo.push(JSON.stringify(tubes));
+    tubes=WS.pour(tubes,sel,i);moves++;sel=-1;
+    render();
+    afterMove();
+  }else{
+    shake(i);
+    // dacă tubul atins are ceva în el, îl alegem ca nouă sursă
+    if(tubes[i].length){sel=i;render()}else{sel=-1;render()}
+  }
+}
+
+function anyMove(){
+  for(let i=0;i<tubes.length;i++)for(let j=0;j<tubes.length;j++){
+    if(!WS.canPour(tubes,i,j))continue;
+    // mutare utilă: nu doar între un tub uniform și unul gol
+    const a=tubes[i];
+    if(!tubes[j].length&&a.every(c=>c===a[0]))continue;
+    return true;
+  }
+  return false;
+}
+
+function afterMove(){
+  if(WS.solved(tubes)){
+    done=true;
+    try{localStorage.setItem('watersort_level',String(level+1))}catch(e){}
+    document.getElementById('extra').disabled=true;
+    document.getElementById('ovT').textContent='Nivel '+level+' complet!';
+    document.getElementById('ovP').textContent='Ai sortat toate culorile în '+moves+' mutări.';
+    const b=document.getElementById('ovB');b.textContent='Nivelul următor';b.onclick=()=>start(level+1);
+    setTimeout(()=>{overlay.style.display='flex'},350);
+    return;
+  }
+  if(!anyMove())toast(extraUsed?'Nu mai ai mutări — folosește „Înapoi" sau „Reîncearcă".':'Nu mai ai mutări — folosește „Înapoi" sau „Tub extra".',3500);
+}
+
+document.getElementById('undo').addEventListener('click',()=>{
+  if(!undo.length||done)return;
+  tubes=JSON.parse(undo.pop());sel=-1;moves=Math.max(0,moves-1);render();
+});
+document.getElementById('extra').addEventListener('click',()=>{
+  if(extraUsed||done)return;
+  undo.push(JSON.stringify(tubes));
+  tubes.push([]);extraUsed=true;sel=-1;render();
+  toast('Ai adăugat un tub gol (o singură dată pe nivel).');
+});
+document.getElementById('retry').addEventListener('click',()=>{
+  if(!moves&&!extraUsed||done||confirm('Reiei același puzzle de la început?')){
+    tubes=JSON.parse(initial);undo=[];sel=-1;moves=0;extraUsed=false;done=false;overlay.style.display='none';render();
+  }
+});
+document.getElementById('fresh').addEventListener('click',()=>{
+  if(!moves&&!extraUsed||done||confirm('Generezi alt puzzle random pentru acest nivel?'))start(level);
+});
+
+if(window.ResizeObserver)new ResizeObserver(()=>{if(tubes.length)render()}).observe(wrap);
+
+start(level);
+})();
+</script>
+<script src="../../breaks.js"></script>
+<script src="../../pwa.js"></script>
+</body>
+</html>
