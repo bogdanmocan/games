@@ -29,6 +29,7 @@ button{
   font:inherit;font-size:14px;font-weight:600;border:0;border-radius:10px;padding:7px 11px;
   background:var(--btn);color:var(--btnfg);cursor:pointer;
 }
+select{font:inherit;font-size:14px;font-weight:600;border:0;border-radius:10px;padding:7px 8px;background:var(--btn);color:var(--btnfg)}
 button:disabled{opacity:.4;cursor:default}
 button:focus-visible{outline:3px solid #fff;outline-offset:2px}
 button[hidden]{display:none}
@@ -72,12 +73,17 @@ button[hidden]{display:none}
   <span id="info"></span>
   <button id="undo" type="button">Înapoi</button>
   <button id="auto" type="button" hidden>Finalizează</button>
+  <select id="level" aria-label="Nivel">
+    <option value="easy">Ușor</option>
+    <option value="hard">Greu</option>
+    <option value="unique">Unic</option>
+  </select>
   <button id="mode" type="button"></button>
   <button id="new" type="button">Joc nou</button>
 </header>
 <div id="wrap">
   <div id="board"></div>
-  <div id="busy">Se caută o mână câștigabilă…</div>
+  <div id="busy">Se caută o mână potrivită…</div>
   <div id="overlay"><div class="box"><h2>Felicitări!</h2><p id="ovP"></p><button id="ovB" type="button">Joc nou</button></div></div>
 </div>
 
@@ -90,17 +96,18 @@ const wrap=document.getElementById('wrap'),board=document.getElementById('board'
 const infoEl=document.getElementById('info'),undoBtn=document.getElementById('undo');
 const autoBtn=document.getElementById('auto'),modeBtn=document.getElementById('mode');
 const overlay=document.getElementById('overlay');
+const levelEl=document.getElementById('level');
 
-let S,undo=[],moves=0,draw3=false,won=false,autoTimer=null;
+let S,undo=[],moves=0,draw3=false,won=false,autoTimer=null,level="easy";
 let M={}; // layout metrics
 
 function save(){
-  try{localStorage.setItem('solitaire_state',JSON.stringify({S,moves,draw3,won}))}catch(e){}
+  try{localStorage.setItem('solitaire_state',JSON.stringify({S,moves,draw3,won,level}))}catch(e){}
 }
 function load(){
   try{
     const v=JSON.parse(localStorage.getItem('solitaire_state')||'null');
-    if(v&&v.S&&v.S.tab&&v.S.tab.length===7){S=v.S;moves=v.moves||0;draw3=!!v.draw3;won=!!v.won;return true}
+    if(v&&v.S&&v.S.tab&&v.S.tab.length===7){S=v.S;moves=v.moves||0;draw3=!!v.draw3;won=!!v.won;if(['easy','hard','unique'].includes(v.level))level=v.level;return true}
   }catch(e){}
   return false;
 }
@@ -126,11 +133,12 @@ function deal(){
   stopAuto();
   if(worker){worker.terminate();worker=null}
   busy=true;busyEl.style.display='flex';overlay.style.display='none';
+  modeBtn.textContent='Trage: '+(draw3?3:1);levelEl.value=level;
   try{
     worker=new Worker('solver.js');
     worker.onmessage=e=>{worker.terminate();worker=null;applyDeck(e.data.deck)};
     worker.onerror=()=>{if(worker){worker.terminate();worker=null}applyDeck(randomDeck())};
-    worker.postMessage({draw3});
+    worker.postMessage({draw3,level});
   }catch(err){applyDeck(randomDeck())}
 }
 
@@ -290,6 +298,7 @@ function render(){
   undoBtn.disabled=!undo.length;
   autoBtn.hidden=!canAuto();
   modeBtn.textContent='Trage: '+(draw3?3:1);
+  levelEl.value=level;
   infoEl.textContent=moves+' mutări';
 }
 
@@ -338,6 +347,10 @@ undoBtn.addEventListener('click',()=>{
   overlay.style.display='none';save();render();
 });
 autoBtn.addEventListener('click',startAuto);
+levelEl.addEventListener('change',()=>{
+  if(busy||(moves&&!won&&!confirm('Schimbarea nivelului începe un joc nou. Continui?'))){levelEl.value=level;return}
+  level=levelEl.value;deal();
+});
 modeBtn.addEventListener('click',()=>{
   if(busy)return;
   if(moves&&!won&&!confirm('Schimbarea modului începe un joc nou. Continui?'))return;
