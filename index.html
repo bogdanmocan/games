@@ -30,9 +30,6 @@ a.card p{margin:0;font-size:13px;color:var(--muted)}
 section.breaks{margin-top:28px;padding:14px 16px;border-radius:14px;background:var(--card);box-shadow:0 2px 10px rgba(0,0,0,.12)}
 section.breaks h2{margin:0 0 6px;font-size:16px}
 section.breaks p{margin:0 0 10px;font-size:13px;color:var(--muted)}
-section.breaks .r{display:flex;flex-wrap:wrap;gap:10px}
-section.breaks label{display:flex;flex-direction:column;font-size:12px;color:var(--muted);gap:3px}
-section.breaks select{font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--muted);background:var(--bg);color:var(--fg)}
 details.admin{margin-top:28px;padding-top:12px;border-top:1px solid var(--muted)}
 details.admin summary{cursor:pointer;font-size:14px;font-weight:600;color:var(--muted)}
 details.admin ul{margin:10px 0 0;padding-left:20px;font-size:14px}
@@ -52,10 +49,6 @@ details.admin small{color:var(--muted)}
   <section class="breaks">
     <h2>Pauze</h2>
     <p id="bstat"></p>
-    <div class="r">
-      <label>Memento după<select id="blimit"></select></label>
-      <label>Pauză obligatorie<select id="bbreak"></select></label>
-    </div>
   </section>
   <details class="admin">
     <summary>Zonă admin</summary>
@@ -88,22 +81,14 @@ function showStatus(){
 }
 addEventListener('online',showStatus);addEventListener('offline',showStatus);showStatus();
 
-// pauze: timp de joc cumulat pe toate jocurile
+// pauze: timp de joc cumulat pe toate jocurile (setările sunt fixe)
 (function(){
-  const st=document.getElementById('bstat'),lim=document.getElementById('blimit'),brk=document.getElementById('bbreak');
-  if(!window.GBreak){st.textContent='';return}
-  const init=GBreak.status();
-  for(const m of init.limits){const o=document.createElement('option');o.value=m;o.textContent=m?m+' min':'Oprit';lim.appendChild(o)}
-  for(const m of init.breaks){const o=document.createElement('option');o.value=m;o.textContent=m+' min';brk.appendChild(o)}
-  lim.value=init.limitMin;brk.value=init.breakMin;
+  const st=document.getElementById('bstat');
+  if(!window.GBreak)return;
   function upd(){
     const s=GBreak.status();
-    st.textContent=s.limitMin
-      ?'Ai jucat '+s.playedMin+' din '+s.limitMin+' min. La limită primești un memento: poți amâna de '+s.maxSnooze+' ori câte 10 minute, apoi jocurile se blochează pentru pauza obligatorie.'
-      :'Mementourile de pauză sunt oprite.';
+    st.textContent='Ai jucat '+s.playedMin+' din '+s.limitMin+' min. La limită primești un memento: poți amâna de '+s.maxSnooze+' ori câte 10 minute, apoi jocurile se blochează '+s.breakMin+' minute.';
   }
-  const apply=()=>{GBreak.setConfig(+lim.value,+brk.value);upd()};
-  lim.addEventListener('change',apply);brk.addEventListener('change',apply);
   upd();setInterval(upd,5000);
 })();
 

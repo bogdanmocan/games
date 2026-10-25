@@ -4,20 +4,11 @@
 // Starea e salvată în localStorage, deci rămâne la fel dacă închizi sau redeschizi aplicația.
 (function(){
 'use strict';
-const SK='gbreak_state_v1',CK='gbreak_cfg_v1';
-const SNOOZE_MIN=10,MAX_SNOOZE=2;
-const LIMITS=[0,30,45,60,90,120];   // 0 = oprit
-const BREAKS=[10,15,20,30];
+const SK='gbreak_state_v1';
+// Valorile sunt fixe, nu se pot schimba din interfață.
+const LIMIT_MIN=60,BREAK_MIN=15,SNOOZE_MIN=10,MAX_SNOOZE=2;
 
-function readCfg(){
-  let c={};
-  try{c=JSON.parse(localStorage.getItem(CK)||'{}')||{}}catch(e){}
-  return {
-    limitMin:LIMITS.includes(c.limitMin)?c.limitMin:60,
-    breakMin:BREAKS.includes(c.breakMin)?c.breakMin:15
-  };
-}
-function writeCfg(c){try{localStorage.setItem(CK,JSON.stringify(c))}catch(e){}}
+const readCfg=()=>({limitMin:LIMIT_MIN,breakMin:BREAK_MIN});
 function fresh(now){return {played:0,snoozes:0,lockUntil:0,last:now}}
 function readState(now){
   try{
@@ -94,8 +85,6 @@ function tick(){
   const now=Date.now(),c=readCfg();
   let s=readState(now);
 
-  if(!c.limitMin&&!s.lockUntil){hide();return}
-
   // pauză obligatorie în curs sau terminată
   if(s.lockUntil){
     if(now<s.lockUntil){
@@ -116,7 +105,7 @@ function tick(){
   }else if(visible){s.last=now;writeState(s)}
 
   const thr=c.limitMin*60+s.snoozes*SNOOZE_MIN*60;
-  if(c.limitMin&&s.played>=thr){
+  if(s.played>=thr){
     if(s.snoozes<MAX_SNOOZE){
       const left=MAX_SNOOZE-s.snoozes;
       show('prompt','E timpul pentru o pauză','Joci de aproximativ '+Math.round(s.played/60)+' de minute. '+TIPS,
@@ -132,13 +121,7 @@ window.GBreak={
   status(){
     const now=Date.now(),c=readCfg(),s=readState(now);
     const away=now-s.last>=c.breakMin*60000&&!s.lockUntil;
-    return {limitMin:c.limitMin,breakMin:c.breakMin,playedMin:away?0:Math.floor(s.played/60),snoozes:away?0:s.snoozes,lockedMs:Math.max(0,s.lockUntil-now),limits:LIMITS,breaks:BREAKS,maxSnooze:MAX_SNOOZE};
-  },
-  setConfig(limitMin,breakMin){
-    const c=readCfg();
-    if(LIMITS.includes(limitMin))c.limitMin=limitMin;
-    if(BREAKS.includes(breakMin))c.breakMin=breakMin;
-    writeCfg(c);tick();
+    return {limitMin:c.limitMin,breakMin:c.breakMin,playedMin:away?0:Math.floor(s.played/60),snoozes:away?0:s.snoozes,lockedMs:Math.max(0,s.lockUntil-now),maxSnooze:MAX_SNOOZE};
   }
 };
 
