@@ -14,18 +14,23 @@ h1{font-size:20px;margin:6px 0 4px}
 a{color:var(--fg)}
 .row{display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin:10px 0}
 label{display:flex;flex-direction:column;font-size:12px;color:var(--muted);gap:3px}
-input[type=number]{font:inherit;width:84px;padding:7px;border-radius:8px;border:0}
+label.chk{flex-direction:row;align-items:center;gap:6px;font-size:14px;color:var(--fg);padding-bottom:8px}
+input[type=number],select{font:inherit;padding:7px;border-radius:8px;border:0}
+input[type=number]{width:84px}
 button{font:inherit;font-size:14px;font-weight:600;border:0;border-radius:10px;padding:8px 12px;background:var(--btn);color:var(--btnfg);cursor:pointer}
 button.sec{background:#2d4f47;color:var(--fg)}
 button:disabled{opacity:.4;cursor:default}
 #status{font-size:14px;margin:6px 0;min-height:20px}
 .ok{color:#7ff0b0}.bad{color:#ff9a9a}
-#stage{position:relative;width:100%;height:min(62vh,560px);background:var(--card);border-radius:14px;overflow:hidden}
+#stage{position:relative;width:100%;height:min(74vh,700px);background:var(--card);border-radius:14px;overflow:hidden;touch-action:manipulation}
 .t{position:absolute;box-sizing:border-box;border-radius:12%;border:1px solid rgba(0,0,0,.45);
   display:flex;align-items:center;justify-content:center;font-size:11px;color:rgba(0,0,0,.55);cursor:default;
   box-shadow:var(--d) var(--d) 0 rgba(0,0,0,.35)}
 .t.top{cursor:pointer}
 .t.top:hover{outline:3px solid #ff6b6b}
+.g{position:absolute;box-sizing:border-box;border-radius:12%;border:2px dashed rgba(255,255,255,.55);
+  background:rgba(255,255,255,.08);cursor:pointer}
+.g:hover{background:rgba(94,227,161,.35);border-color:#5ee3a1}
 #saved{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
 #saved button{padding:5px 10px;font-size:13px}
 textarea{width:100%;height:90px;border-radius:8px;border:0;padding:8px;font:12px monospace}
@@ -35,13 +40,24 @@ textarea{width:100%;height:90px;border-radius:8px;border:0;padding:8px;font:12px
 <main>
   <a href="../../">&#8592; Colecție</a> · <a href="./">Joacă Mahjong</a>
   <h1>Generator de forme Mahjong</h1>
-  <div style="font-size:13px;color:var(--muted)">Generezi forma (doar poziții, fără modele) pentru un nivel. Click pe o piesă de sus o șterge. Jocul folosește forma salvată în locul celei generate automat.</div>
+  <div style="font-size:13px;color:var(--muted)">Generezi o formă (doar poziții, fără modele) sau pornești de la zero cu „Gol”. Click pe un loc punctat adaugă o piesă pe stratul activ; click pe o piesă de sus o șterge. Pe straturile de deasupra poți pune piese cu acoperire completă sau 50%.</div>
 
   <div class="row">
     <label>Nivel<input id="lv" type="number" min="1" value="6"></label>
     <label>Piese (par)<input id="n" type="number" min="2" max="144" step="2"></label>
     <label>Straturi<input id="z" type="number" min="1" max="6"></label>
     <button id="gen" type="button">Generează</button>
+    <button id="empty" class="sec" type="button">Gol</button>
+  </div>
+  <div class="row">
+    <label>Strat activ
+      <select id="az"><option value="0">1 (jos)</option><option value="1">2</option><option value="2">3</option><option value="3">4</option><option value="4">5</option><option value="5">6</option></select>
+    </label>
+    <label>Acoperire
+      <select id="cov"><option value="full">Completă</option><option value="half">Parțială (50%)</option></select>
+    </label>
+    <label class="chk"><input id="sym" type="checkbox" checked> Simetrie</label>
+    <button id="undoE" class="sec" type="button">Anulează</button>
     <button id="save" type="button">Salvează pentru nivel</button>
     <button id="del" class="sec" type="button">Revino la forma automată</button>
   </div>
@@ -70,27 +86,73 @@ function local(){try{return JSON.parse(sessionStorage.getItem(KEY)||'{}')}catch(
 function all(){return Object.assign({},window.MJ_LAYOUTS||{},local())}
 function putLocal(o){try{sessionStorage.setItem(KEY,JSON.stringify(o))}catch(e){status.textContent='Nu pot salva în această sesiune.'}}
 
-let tiles=[];
+let tiles=[],hist=[];
 const rnd=Math.random;
+const BX=4.5,BY=6; // limitele tablei de lucru (centrul piesei)
 
 function level(){return Math.max(1,parseInt($('lv').value,10)||1)}
 function params(){
   const p=MJ.levelParams(level());
   return {N:parseInt($('n').value,10)||p.N,Z:parseInt($('z').value,10)||p.Z};
 }
-function resetParams(){
-  const p=MJ.levelParams(level());$('n').value=p.N;$('z').value=p.Z;
-}
 function loadLevel(){
-  const c=all()[level()];
-  resetParams();
-  if(c){tiles=c.map(a=>({x:a[0],y:a[1],z:a[2]}));$('n').value=tiles.length;$('z').value=Math.max(...tiles.map(t=>t.z))+1}
+  const c=all()[level()],p=MJ.levelParams(level());
+  $('n').value=p.N;$('z').value=p.Z;hist=[];
+  if(c)tiles=c.map(a=>({x:a[0],y:a[1],z:a[2]}));
   else generate();
   draw();
 }
 function generate(){
   const {N,Z}=params();
   tiles=MJ.genLayout(N+(N%2),Z,rnd);
+}
+function pushHist(){hist.push(JSON.stringify(tiles));if(hist.length>100)hist.shift()}
+
+// ---- reguli de plasare ----
+const same=(a,b)=>Math.abs(a.x-b.x)<.999&&Math.abs(a.y-b.y)<.999;
+const occupied=(x,y,z)=>tiles.some(t=>t.z===z&&same(t,{x,y}));
+const inBounds=(x,y)=>Math.abs(x)<=BX&&Math.abs(y)<=BY;
+// pe straturile de sus piesa trebuie să se sprijine măcar parțial pe stratul de dedesubt
+const supported=(x,y,z)=>z===0||tiles.some(t=>t.z===z-1&&same(t,{x,y}));
+const valid=(x,y,z)=>inBounds(x,y)&&!occupied(x,y,z)&&supported(x,y,z);
+
+function ghosts(z,mode){
+  const out=new Map();
+  const add=(x,y)=>{if(valid(x,y,z))out.set(x+','+y,{x,y})};
+  const half=mode==='half';
+  if(z===0){
+    const L0=tiles.filter(t=>t.z===0);
+    if(!L0.length){add(0,0);add(.5,0);add(0,.5)}
+    for(const t of L0){
+      if(!half){add(t.x-1,t.y);add(t.x+1,t.y);add(t.x,t.y-1);add(t.x,t.y+1)}
+      else{
+        add(t.x-.5,t.y-1);add(t.x+.5,t.y-1);add(t.x-.5,t.y+1);add(t.x+.5,t.y+1);
+        add(t.x-1,t.y-.5);add(t.x+1,t.y-.5);add(t.x-1,t.y+.5);add(t.x+1,t.y+.5);
+      }
+    }
+  }else{
+    for(const t of tiles){
+      if(t.z!==z-1)continue;
+      if(!half)add(t.x,t.y);
+      else{add(t.x-.5,t.y);add(t.x+.5,t.y);add(t.x,t.y-.5);add(t.x,t.y+.5)} // 50% peste piesa de dedesubt
+    }
+  }
+  return [...out.values()];
+}
+
+function addTile(x,y,z){
+  pushHist();
+  tiles.push({x,y,z});
+  if($('sym').checked&&x!==0&&valid(-x,y,z))tiles.push({x:-x,y,z});
+  draw();
+}
+const hasAbove=t=>tiles.some(o=>o.z===t.z+1&&same(o,t));
+function removeTile(t){
+  pushHist();
+  const mirror=$('sym').checked&&t.x!==0?tiles.find(o=>o.z===t.z&&o.y===t.y&&o.x===-t.x):null;
+  tiles.splice(tiles.indexOf(t),1);
+  if(mirror&&!hasAbove(mirror))tiles.splice(tiles.indexOf(mirror),1);
+  draw();
 }
 
 function solvable(){
@@ -102,34 +164,43 @@ function solvable(){
 
 function draw(){
   stage.textContent='';
-  const W=stage.clientWidth,H=stage.clientHeight,k=1.3,pad=14;
-  if(!tiles.length){status.textContent='Nicio piesă.';status.className='bad';$('save').disabled=true;return}
-  let minX=1e9,maxX=-1e9,minY=1e9,maxY=-1e9,maxZ=0;
-  for(const t of tiles){minX=Math.min(minX,t.x);maxX=Math.max(maxX,t.x);minY=Math.min(minY,t.y);maxY=Math.max(maxY,t.y);maxZ=Math.max(maxZ,t.z)}
-  const bw=maxX-minX+1,bh=maxY-minY+1,dz=.1;
-  const tw=Math.min((W-2*pad)/(bw+maxZ*dz+.1),(H-2*pad)/(bh*k+maxZ*dz+.1),72),th=tw*k,d=tw*dz;
-  const offX=(W-bw*tw+maxZ*d)/2,offY=(H-bh*th+maxZ*d)/2;
+  const W=stage.clientWidth,H=stage.clientHeight,k=1.3,pad=10,dz=.1;
+  const az=parseInt($('az').value,10),mode=$('cov').value;
+  const tw=Math.min((W-2*pad)/(2*BX+1.7),(H-2*pad)/((2*BY+1)*k+.7),72),th=tw*k,d=tw*dz;
   stage.style.setProperty('--d',Math.max(2,d*.8)+'px');
-  const hasAbove=t=>tiles.some(o=>o.z===t.z+1&&Math.abs(o.x-t.x)<.999&&Math.abs(o.y-t.y)<.999);
-  tiles.forEach(t=>{
-    const e=document.createElement('div');
-    const top=!hasAbove(t);
-    e.className='t'+(top?' top':'');
+  const place=(e,x,y,z)=>{
     e.style.width=tw+'px';e.style.height=th+'px';
-    e.style.left=(offX+(t.x-minX)*tw-t.z*d)+'px';
-    e.style.top=(offY+(t.y-minY)*th-t.z*d)+'px';
-    e.style.zIndex=t.z*10000+Math.round((t.y-minY)*100)+Math.round((t.x-minX)*4);
+    e.style.left=(W/2+x*tw-tw/2-z*d)+'px';
+    e.style.top=(H/2+y*th-th/2-z*d)+'px';
+    e.style.zIndex=z*10000+Math.round((y+BY+1)*100)+Math.round((x+BX+1)*4);
+  };
+  let maxZ=-1;
+  for(const t of tiles){
+    maxZ=Math.max(maxZ,t.z);
+    const e=document.createElement('div'),top=!hasAbove(t);
+    e.className='t'+(top?' top':'');
+    place(e,t.x,t.y,t.z);
     e.style.background='hsl('+(150-t.z*28)+',45%,'+(55+t.z*7)+'%)';
     e.textContent=t.z+1;
-    if(top)e.addEventListener('click',()=>{tiles.splice(tiles.indexOf(t),1);draw()});
+    if(top)e.addEventListener('click',()=>removeTile(t));
     stage.appendChild(e);
-  });
-  const odd=tiles.length%2;
-  const ok=!odd&&solvable();
-  status.className=ok?'ok':'bad';
-  status.textContent=tiles.length+' piese, '+(maxZ+1)+' straturi — '+(odd?'număr impar, șterge o piesă sau generează din nou':ok?'rezolvabilă ✓':'nu se poate goli în perechi, generează din nou');
-  $('save').disabled=!ok;
-  $('n').value=tiles.length;
+  }
+  for(const gh of ghosts(az,mode)){
+    const e=document.createElement('div');
+    e.className='g';place(e,gh.x,gh.y,az);e.style.zIndex=parseInt(e.style.zIndex,10)+5000;
+    e.addEventListener('click',()=>addTile(gh.x,gh.y,az));
+    stage.appendChild(e);
+  }
+  if(!tiles.length){status.className='bad';status.textContent='Nicio piesă — click pe un loc punctat ca să începi.';$('save').disabled=true}
+  else{
+    const odd=tiles.length%2,ok=!odd&&solvable();
+    status.className=ok?'ok':'bad';
+    status.textContent=tiles.length+' piese, '+(maxZ+1)+' straturi — '+(odd?'număr impar de piese, adaugă sau șterge una':ok?'rezolvabilă ✓':'nu se poate goli în perechi, schimbă forma');
+    $('save').disabled=!ok;
+  }
+  $('n').value=tiles.length||'';
+  if(maxZ>=0)$('z').value=maxZ+1;
+  $('undoE').disabled=!hist.length;
   renderSaved();
 }
 function renderSaved(){
@@ -144,10 +215,14 @@ function renderSaved(){
   }
 }
 
-$('gen').addEventListener('click',()=>{generate();draw()});
+$('gen').addEventListener('click',()=>{pushHist();generate();draw()});
+$('empty').addEventListener('click',()=>{pushHist();tiles=[];$('az').value='0';draw()});
+$('undoE').addEventListener('click',()=>{if(hist.length){tiles=JSON.parse(hist.pop());draw()}});
 $('lv').addEventListener('change',loadLevel);
-$('n').addEventListener('change',()=>{generate();draw()});
-$('z').addEventListener('change',()=>{generate();draw()});
+$('n').addEventListener('change',()=>{pushHist();generate();draw()});
+$('z').addEventListener('change',()=>{pushHist();generate();draw()});
+$('az').addEventListener('change',draw);
+$('cov').addEventListener('change',draw);
 $('save').addEventListener('click',()=>{
   const o=local();o[level()]=tiles.map(t=>[t.x,t.y,t.z]);putLocal(o);
   renderSaved();status.className='ok';status.textContent='Salvat pentru nivelul '+level()+'.';
