@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mahjong</title>
+<link rel="manifest" href="../../manifest.webmanifest">
+<meta name="theme-color" content="#1f3a34">
+<link rel="icon" href="../../icons/mahjong.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../../icons/icon-192.png">
+<style>
+:root{--bg:#1f3a34;--bg2:#17302a;--fg:#f2f6f3;--btn:#f2f6f3;--btnfg:#17302a}
+html,body{height:100%;margin:0}
+body{
+  background:radial-gradient(circle at 50% 35%,#2b5248,var(--bg2));color:var(--fg);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  display:flex;flex-direction:column;overflow:hidden;
+  -webkit-user-select:none;user-select:none;touch-action:manipulation;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+}
+header{width:100%;max-width:900px;margin:0 auto;box-sizing:border-box;padding:8px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#home{color:var(--fg);text-decoration:none;font-size:22px;line-height:1;padding:4px 6px}
+h1{font-size:18px;margin:0;font-weight:700}
+#info{font-size:13px;opacity:.85;flex:1;min-width:70px}
+button{font:inherit;font-size:14px;font-weight:600;border:0;border-radius:10px;padding:7px 11px;background:var(--btn);color:var(--btnfg);cursor:pointer}
+button:disabled{opacity:.4;cursor:default}
+button:focus-visible{outline:3px solid #fff;outline-offset:2px}
+#wrap{flex:1;min-height:0;position:relative;width:100%;overflow:hidden}
+#board{position:absolute;inset:0}
+.tile{
+  position:absolute;box-sizing:border-box;border-radius:14%;
+  box-shadow:var(--d) var(--d) 0 #9c9272,0 0 0 1px rgba(0,0,0,.4);
+  transition:transform .12s,opacity .22s,filter .15s;cursor:pointer;
+}
+.tile svg{width:100%;height:100%;display:block;pointer-events:none}
+.tile.blocked{filter:brightness(.72)}
+.tile.sel{transform:translate(-3px,-3px);box-shadow:var(--d) var(--d) 0 #9c9272,0 0 0 3px #ffd54f}
+.tile.hint{animation:hint .5s ease-in-out 3}
+.tile.shake{animation:shake .25s}
+.tile.gone{opacity:0;transform:scale(.6);pointer-events:none}
+.tile.fresh::after{content:"";position:absolute;right:6%;top:6%;width:16%;aspect-ratio:1;border-radius:50%;background:#ffb300;box-shadow:0 0 0 2px #fff8}
+@keyframes hint{50%{box-shadow:var(--d) var(--d) 0 #9c9272,0 0 0 4px #5ee3a1;transform:translate(-2px,-2px)}}
+@keyframes shake{25%{translate:-4px 0}75%{translate:4px 0}}
+#toast{position:absolute;left:50%;top:10px;transform:translateX(-50%);background:rgba(0,0,0,.75);color:#fff;padding:8px 14px;border-radius:10px;font-size:14px;display:none;z-index:99999;max-width:90%;text-align:center}
+#overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55);z-index:100000}
+#overlay .box{background:#fff;color:#111;padding:22px 26px;border-radius:16px;text-align:center;min-width:220px;max-width:85%}
+#overlay h2{margin:0 0 6px;font-size:22px}
+#overlay p{margin:0 0 14px;color:#555;font-size:14px}
+#overlay button{background:#1f3a34;color:#fff}
+</style>
+</head>
+<body>
+<header>
+  <a id="home" href="../../" aria-label="Înapoi la colecție">&#8592;</a>
+  <h1 id="lvl">Nivel 1</h1>
+  <span id="info"></span>
+  <button id="undo" type="button">Înapoi</button>
+  <button id="hint" type="button">Indiciu</button>
+  <button id="shuffle" type="button">Amestecă</button>
+  <button id="again" type="button">Reia</button>
+</header>
+<div id="wrap">
+  <div id="board"></div>
+  <div id="toast"></div>
+  <div id="overlay"><div class="box"><h2 id="ovT"></h2><p id="ovP"></p><button id="ovB" type="button">Nivelul următor</button></div></div>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function(){
+const wrap=document.getElementById('wrap'),board=document.getElementById('board');
+const lvlEl=document.getElementById('lvl'),infoEl=document.getElementById('info');
+const undoBtn=document.getElementById('undo'),toastEl=document.getElementById('toast');
+const overlay=document.getElementById('overlay');
+
+let level=1;
+try{const v=parseInt(localStorage.getItem('mahjong_level')||'1',10);if(v>0)level=v}catch(e){}
+
+let tiles=[],g=null,els=[],sel=-1,undo=[],setNo=0,fresh=[],won=false,tw=40;
+const rnd=()=>Math.random();
+const svgCache={};
+function svgFor(slot){
+  const k=setNo+':'+slot;
+  return svgCache[k]||(svgCache[k]=MJ.tileSvg(slot,setNo));
+}
+
+function alive(){return tiles.map(t=>t.alive)}
+function freeIds(){const al=alive(),r=[];for(let i=0;i<tiles.length;i++)if(MJ.isFree(g,al,i))r.push(i);return r}
+function remaining(){return tiles.reduce((n,t)=>n+(t.alive?1:0),0)}
+function hasMove(){
+  const by={};
+  for(const i of freeIds()){const t=tiles[i].t;by[t]=(by[t]||0)+1;if(by[t]>=2)return true}
+  return false;
+}
+
+function toast(msg,ms){
+  toastEl.textContent=msg;toastEl.style.display='block';
+  clearTimeout(toast.t);toast.t=setTimeout(()=>{toastEl.style.display='none'},ms||2600);
+}
+
+function setupLevel(L){
+  level=L;setNo=MJ.setOf(L);fresh=MJ.freshSlots(setNo);
+  const p=MJ.levelParams(L);
+  let list=null,types=null;
+  for(let a=0;a<30&&!types;a++){
+    list=MJ.genLayout(p.N,p.Z,rnd);
+    g=MJ.buildGraph(list);
+    const pairs=[];for(let i=0;i<list.length/2;i++)pairs.push(i%p.M);
+    types=MJ.assignTypes(g,list.map(()=>true),pairs,rnd);
+  }
+  if(!types){ // plasă de siguranță: strat unic, mereu rezolvabil
+    list=MJ.genLayout(p.N,1,rnd);g=MJ.buildGraph(list);
+    const pairs=[];for(let i=0;i<list.length/2;i++)pairs.push(i%p.M);
+    types=MJ.assignTypes(g,list.map(()=>true),pairs,rnd);
+  }
+  tiles=list.map((t,i)=>({x:t.x,y:t.y,z:t.z,t:types[i],alive:true}));
+  undo=[];sel=-1;won=false;
+  overlay.style.display='none';
+  lvlEl.textContent='Nivel '+L;
+  buildDom();
+  if(L>1&&(L-1)%10===0)toast('Set nou de piese! Aproximativ 20% dintre modele s-au schimbat (marcate cu un punct auriu).',5000);
+}
+
+function buildDom(){
+  board.textContent='';els=[];
+  tiles.forEach((t,i)=>{
+    const d=document.createElement('div');
+    d.className='tile'+(t.alive?'':' gone');
+    const s=svgFor(t.t);
+    d.innerHTML=s.svg;d.style.background=s.face;
+    if(fresh.includes(t.t)&&(level-1)%10===0)d.classList.add('fresh');
+    d.addEventListener('pointerdown',e=>{e.preventDefault();click(i)});
+    board.appendChild(d);els.push(d);
+  });
+  layout();refresh();
+}
+
+function layout(){
+  if(!tiles.length)return;
+  const W=wrap.clientWidth,H=wrap.clientHeight,k=1.3,pad=12;
+  let minX=1e9,maxX=-1e9,minY=1e9,maxY=-1e9,maxZ=0;
+  for(const t of tiles){minX=Math.min(minX,t.x);maxX=Math.max(maxX,t.x);minY=Math.min(minY,t.y);maxY=Math.max(maxY,t.y);maxZ=Math.max(maxZ,t.z)}
+  const bw=maxX-minX+1,bh=maxY-minY+1,dz=.1;
+  tw=Math.min((W-2*pad)/(bw+maxZ*dz+.1),(H-2*pad)/((bh*k)+maxZ*dz+.1),72);
+  const th=tw*k,d=tw*dz;
+  const offX=(W-bw*tw+maxZ*d)/2,offY=(H-bh*th+maxZ*d)/2;
+  board.style.setProperty('--d',Math.max(2,d*.8)+'px');
+  tiles.forEach((t,i)=>{
+    const e=els[i];
+    e.style.width=tw+'px';e.style.height=th+'px';
+    e.style.left=(offX+(t.x-minX)*tw-t.z*d)+'px';
+    e.style.top=(offY+(t.y-minY)*th-t.z*d)+'px';
+    e.style.zIndex=t.z*10000+Math.round((t.y-minY)*100)+Math.round((t.x-minX)*4);
+  });
+}
+
+function refresh(){
+  const al=alive();
+  tiles.forEach((t,i)=>{
+    const e=els[i];
+    e.classList.toggle('gone',!t.alive);
+    e.classList.toggle('blocked',t.alive&&!MJ.isFree(g,al,i));
+    e.classList.toggle('sel',i===sel);
+  });
+  const n=remaining();
+  infoEl.textContent=n+' piese';
+  undoBtn.disabled=!undo.length;
+}
+
+function snap(){undo.push(JSON.stringify(tiles));if(undo.length>200)undo.shift()}
+
+function click(i){
+  if(won||!tiles[i].alive)return;
+  const al=alive();
+  if(!MJ.isFree(g,al,i)){
+    els[i].classList.remove('shake');void els[i].offsetWidth;els[i].classList.add('shake');
+    return;
+  }
+  if(sel<0){sel=i;refresh();return}
+  if(sel===i){sel=-1;refresh();return}
+  if(tiles[sel].t===tiles[i].t){
+    snap();
+    tiles[sel].alive=tiles[i].alive=false;sel=-1;
+    refresh();
+    afterMove();
+  }else{sel=i;refresh()}
+}
+
+function afterMove(){
+  if(remaining()===0){
+    won=true;
+    try{localStorage.setItem('mahjong_level',String(level+1))}catch(e){}
+    const nextNew=level%10===0;
+    document.getElementById('ovT').textContent='Nivel '+level+' complet!';
+    document.getElementById('ovP').textContent=nextNew?'Următorul nivel aduce un set nou de piese.':'Următorul nivel are mai multe piese.';
+    setTimeout(()=>{overlay.style.display='flex'},350);
+    return;
+  }
+  if(!hasMove())reshuffle(true);
+}
+
+// Reamestecă piesele rămase, păstrând aceleași modele. Dacă poziția rămasă nu se mai poate goli
+// în perechi (ex. două piese una peste alta), le reașează într-un layout simplu, tot rezolvabil.
+function reshuffle(auto){
+  const ids=[];tiles.forEach((t,i)=>{if(t.alive)ids.push(i)});
+  const count={};
+  for(const i of ids)count[tiles[i].t]=(count[tiles[i].t]||0)+1;
+  const pairs=[];
+  for(const k in count)for(let n=0;n<count[k]/2;n++)pairs.push(+k);
+  if(!auto)snap();
+  let types=MJ.assignTypes(g,alive(),pairs,rnd),relaid=false;
+  if(types){
+    for(const i of ids)tiles[i].t=types[i];
+  }else{
+    const list=MJ.genLayout(ids.length,1,rnd);
+    g=MJ.buildGraph(list);
+    types=MJ.assignTypes(g,list.map(()=>true),pairs,rnd);
+    tiles=list.map((t,i)=>({x:t.x,y:t.y,z:0,t:types[i],alive:true}));
+    relaid=true;
+  }
+  sel=-1;
+  if(relaid)buildDom();
+  else{
+    tiles.forEach((t,i)=>{if(t.alive){const s=svgFor(t.t);els[i].innerHTML=s.svg;els[i].style.background=s.face}});
+    refresh();
+  }
+  toast(auto?(relaid?'Nu mai erau mutări — am reașezat piesele.':'Nu mai erau mutări — am amestecat piesele.'):'Piesele au fost amestecate.');
+}
+
+document.getElementById('undo').addEventListener('click',()=>{
+  if(!undo.length||won)return;
+  tiles=JSON.parse(undo.pop());g=MJ.buildGraph(tiles);sel=-1;buildDom();
+});
+document.getElementById('hint').addEventListener('click',()=>{
+  if(won)return;
+  const by={};
+  for(const i of freeIds()){
+    const t=tiles[i].t;
+    if(by[t]!==undefined){
+      for(const j of [by[t],i]){els[j].classList.remove('hint');void els[j].offsetWidth;els[j].classList.add('hint')}
+      return;
+    }
+    by[t]=i;
+  }
+});
+document.getElementById('shuffle').addEventListener('click',()=>{if(!won)reshuffle(false)});
+document.getElementById('again').addEventListener('click',()=>{if(!won&&(remaining()===tiles.length||confirm('Reiei nivelul cu un layout nou?')))setupLevel(level)});
+document.getElementById('ovB').addEventListener('click',()=>setupLevel(level+1));
+
+if(window.ResizeObserver)new ResizeObserver(layout).observe(wrap);
+else window.addEventListener('resize',layout);
+
+setupLevel(level);
+})();
+</script>
+<script src="../../pwa.js"></script>
+</body>
+</html>
