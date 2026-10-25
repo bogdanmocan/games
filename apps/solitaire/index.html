@@ -261,6 +261,7 @@ function cardEl(c,x,y,z){
 }
 
 function render(){
+  if(!S)return; // încă se caută o mână
   metrics();
   board.style.setProperty('--cw',M.cw+'px');
   board.textContent='';
