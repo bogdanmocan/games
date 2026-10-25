@@ -74,7 +74,27 @@ button:focus-visible{outline:3px solid #fff;outline-offset:2px}
 (function(){
 const board=document.getElementById('board'),wrap=document.getElementById('wrap');
 const overlay=document.getElementById('overlay'),toastEl=document.getElementById('toast');
-const COLORS=['#e5484d','#3b82f6','#22c55e','#f5b301','#a855f7','#f97316','#14b8a6','#ec4899','#84cc16','#06b6d4','#8b5e3c','#9ca3af'];
+// TEME: adaugă o intrare nouă ca să schimbi aspectul de la un anumit nivel (se folosește ultima cu from <= nivel).
+// Câmpuri: from = primul nivel, name, bg = [centru, margine] pentru fundal, colors = primele culori (restul se generează).
+const THEMES=[
+  {from:1,name:'Clasic',bg:['#26405a','#121c27'],colors:['#e5484d','#3b82f6','#22c55e','#f5b301','#a855f7','#f97316','#14b8a6','#ec4899','#84cc16','#06b6d4','#8b5e3c','#9ca3af']},
+  {from:30,name:'Pastel',bg:['#3a3552','#1a1726'],colors:['#ff8fa3','#8ecae6','#95d5b2','#ffd166','#cdb4db','#ffb703','#80ed99','#f4acb7','#bde0fe','#c7f9cc','#e2b79c','#d3d3e0']},
+  {from:60,name:'Apus',bg:['#4a2a2a','#1a0f12'],colors:['#ff595e','#ff924c','#ffca3a','#8ac926','#1982c4','#6a4c93','#f15bb5','#00bbf9','#00f5d4','#fee440','#9b5de5','#c1c8e4']}
+];
+const themeFor=L=>THEMES.reduce((t,x)=>x.from<=L?x:t,THEMES[0]);
+let theme=THEMES[0];
+// după culorile din temă, restul se generează distinct (unghiul de aur în spațiul HSL)
+function colorOf(i){
+  if(i<theme.colors.length)return theme.colors[i];
+  const k=i-theme.colors.length;
+  return 'hsl('+Math.round((k*137.5+20)%360)+',68%,'+(k%2?44:60)+'%)';
+}
+function applyTheme(L){
+  const t=themeFor(L),changed=t!==theme;
+  theme=t;
+  document.body.style.background='radial-gradient(circle at 50% 30%,'+t.bg[0]+','+t.bg[1]+')';
+  return changed;
+}
 
 let level=1;
 try{const v=parseInt(localStorage.getItem('watersort_level')||'1',10);if(v>0)level=v}catch(e){}
@@ -85,6 +105,7 @@ function toast(m,ms){toastEl.textContent=m;toastEl.style.display='block';clearTi
 function start(L,sameSeed){
   level=L;
   if(!sameSeed)seed=Math.floor(Math.random()*4294967296);
+  const themeChanged=applyTheme(L);
   const g=WS.gen(L,seed);
   initial=JSON.stringify(g.tubes);
   tubes=g.tubes.map(t=>t.slice());
@@ -92,6 +113,7 @@ function start(L,sameSeed){
   overlay.style.display='none';
   document.getElementById('lvl').textContent='Nivel '+L;
   render();
+  if(themeChanged&&L>1)toast('Temă nouă: '+theme.name,3000);
 }
 
 function sizes(){
@@ -109,7 +131,7 @@ function render(){
     const d=document.createElement('div');
     d.className='tube'+(i===sel?' sel':'');
     d.setAttribute('role','button');d.setAttribute('aria-label','Tub '+(i+1));
-    for(const c of t){const u=document.createElement('div');u.className='u';u.style.background=COLORS[c];d.appendChild(u)}
+    for(const c of t){const u=document.createElement('div');u.className='u';u.style.background=colorOf(c);d.appendChild(u)}
     d.addEventListener('pointerdown',e=>{e.preventDefault();tapTube(i)});
     board.appendChild(d);
   });

@@ -15,14 +15,22 @@ function mulberry32(a){
 }
 const DIRS=[[0,-1],[1,0],[0,1],[-1,0]]; // sus, dreapta, jos, stânga
 
+// Fără limită de nivel: după ce tabla atinge mărimea de bază (nivelul 24), continuă să crească încet,
+// iar lanțurile de dependențe, densitatea și șerpii devin tot mai lungi. Pe ecrane mici tabla se derulează.
 function params(L){
+  const extra=Math.max(0,L-24);
+  const cols=Math.min(5+Math.floor(L/3),12)+Math.floor(extra/8);
+  const rows=Math.min(7+Math.floor(L/2),18)+Math.floor(extra/6);
   return {
-    cols:Math.min(5+Math.floor(L/3),10),
-    rows:Math.min(7+Math.floor(L/2),15),
+    cols,rows,
     minLen:2,
-    maxLen:Math.min(3+Math.floor(L/2),9),
-    cover:Math.min(.5+L*.02,.84),
-    lives:3
+    maxLen:Math.min(3+Math.floor(L/2),14)+Math.floor(extra/10),
+    straight:Math.max(.25,.6-L*.01),            // mai mic = șerpi mai încolăciți
+    cover:Math.min(.5+L*.015,.92),               // cât din tablă e ocupată
+    blockedTarget:Math.min(.2+L*.012,.75),       // ponderea săgeților blocate la început
+    depthTarget:2+Math.floor(L/4),               // câte "runde" de deblocare sunt necesare (fără plafon)
+    lives:Math.max(2,3-Math.floor(L/60)),
+    tries:Math.max(6,Math.min(60,Math.round(9000/(cols*rows))))
   };
 }
 function shuffle(a,rnd){for(let i=a.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
@@ -34,14 +42,43 @@ function rayCells(a,p){
   return out;
 }
 
+// nivelul de blocare al fiecărei săgeți: 0 = liberă, altfel 1 + cel mai adânc blocaj din fața ei
+function chainLevels(p,arrows,occ){
+  const memo=new Map();
+  function lv(a){
+    if(memo.has(a.id))return memo.get(a.id);
+    let m=-1;
+    for(const [x,y] of rayCells(a,p)){
+      const o=occ[y][x];
+      if(o!==-1&&o!==a.id)m=Math.max(m,lv(arrows[o]));
+    }
+    memo.set(a.id,m+1);
+    return m+1;
+  }
+  return arrows.map(lv);
+}
+
 function build(L,rnd){
   const p=params(L);
   const occ=Array.from({length:p.rows},()=>new Array(p.cols).fill(-1));
   const arrows=[];
   const total=p.cols*p.rows;
+  const chainP=Math.min(.15+L*.02,.7); // cât de des prelungim cel mai lung lanț de dependențe
   let covered=0,fails=0;
   while(covered<total*p.cover&&fails<600){
-    const sx=Math.floor(rnd()*p.cols),sy=Math.floor(rnd()*p.rows);
+    let sx=Math.floor(rnd()*p.cols),sy=Math.floor(rnd()*p.rows);
+    if(arrows.length&&rnd()<chainP){
+      // pornește noua săgeată în raza capătului celui mai lung lanț, ca lanțul să crească cu 1
+      const lv=chainLevels(p,arrows,occ);
+      let a=arrows[lv.indexOf(Math.max(...lv))];
+      while(lv[a.id]>0){
+        let nxt=null;
+        for(const [x,y] of rayCells(a,p)){const o=occ[y][x];if(o!==-1&&o!==a.id&&(!nxt||lv[o]>lv[nxt.id]))nxt=arrows[o]}
+        if(!nxt)break;a=nxt;
+      }
+      const free=rayCells(a,p).filter(([x,y])=>occ[y][x]===-1);
+      if(free.length){const c=free[Math.floor(rnd()*free.length)];sx=c[0];sy=c[1]}
+    }
     if(occ[sy][sx]!==-1){fails++;continue}
     const len=p.minLen+Math.floor(rnd()*(p.maxLen-p.minLen+1));
     const path=[[sx,sy]],used=new Set([sx+','+sy]);
@@ -49,7 +86,7 @@ function build(L,rnd){
     while(path.length<len){
       const [cx,cy]=path[path.length-1];
       const order=shuffle([0,1,2,3],rnd);
-      if(rnd()<.6)order.unshift(dir);
+      if(rnd()<p.straight)order.unshift(dir);
       let moved=false;
       for(const d of order){
         const nx=cx+DIRS[d][0],ny=cy+DIRS[d][1];
@@ -83,18 +120,34 @@ function occupancy(p,arrows,alive){
   return occ;
 }
 
-// nivelul: cel puțin ~35% dintre săgeți trebuie să fie blocate la început, ca să existe de gândit
+// adâncimea = câte runde de scos săgeți libere sunt necesare (mai mare = lanțuri de dependențe mai lungi)
+function depth(g){
+  const alive=g.arrows.map(()=>true);
+  let left=g.arrows.length,rounds=0;
+  while(left){
+    const occ=occupancy(g.p,g.arrows,alive);
+    const free=g.arrows.filter(a=>alive[a.id]&&blocker(a,g.p,occ)===-1);
+    if(!free.length)return -1;
+    for(const a of free){alive[a.id]=false;left--}
+    rounds++;
+  }
+  return rounds;
+}
+
+// alege dintre mai multe variante pe cea mai apropiată de țintele nivelului (blocaje și adâncime)
 function gen(L,seed){
   const rnd=mulberry32(seed);
-  let best=null;
-  for(let t=0;t<30;t++){
+  let best=null,bestScore=-1;
+  for(let t=0;t<params(L).tries;t++){
     const g=build(L,rnd);
     if(g.arrows.length<3)continue;
-    const alive=g.arrows.map(()=>true),occ=occupancy(g.p,g.arrows,alive);
-    const blocked=g.arrows.filter(a=>blocker(a,g.p,occ)!==-1).length/g.arrows.length;
-    g.blockedRatio=blocked;
-    if(!best||blocked>best.blockedRatio)best=g;
-    if(blocked>=Math.min(.2+L*.015,.5))break;
+    const occ=occupancy(g.p,g.arrows,g.arrows.map(()=>true));
+    g.blockedRatio=g.arrows.filter(a=>blocker(a,g.p,occ)!==-1).length/g.arrows.length;
+    g.depth=depth(g);
+    if(g.depth<0)continue;
+    const score=Math.min(1,g.blockedRatio/g.p.blockedTarget)+Math.min(1,g.depth/g.p.depthTarget);
+    if(score>bestScore){best=g;bestScore=score}
+    if(score>=2)break;
   }
   return best;
 }

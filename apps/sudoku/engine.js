@@ -21,8 +21,9 @@ function count(board,limit,rnd){
     const v=board[i];
     if(v){const b=1<<v;rows[ROW(i)]|=b;cols[COL(i)]|=b;boxes[BOX(i)]|=b}
   }
-  let found=0,firstSolution=null;
+  let found=0,firstSolution=null,nodes=0;
   function rec(){
+    nodes++;
     let best=-1,bestMask=0,bestN=10;
     for(let i=0;i<81;i++){
       if(board[i])continue;
@@ -47,15 +48,16 @@ function count(board,limit,rnd){
     return false;
   }
   rec();
-  return {n:found,solution:firstSolution};
+  return {n:found,solution:firstSolution,nodes};
 }
 
+// Fără limită de nivel: indiciile scad până la 22; de acolo dificultatea crește alegând, dintre tot mai multe
+// puzzle-uri cu soluție unică, pe cel care cere cea mai multă căutare (tot mai greu de rezolvat).
 function params(L){
-  return {clues:Math.max(24,45-L)};
+  return {clues:Math.max(22,45-L),tries:L<=23?1:Math.min(60,1+Math.floor((L-23)/1.5))};
 }
 
-function gen(L,seed){
-  const rnd=mulberry32(seed),p=params(L);
+function makeOne(L,rnd,p){
   const full=new Array(81).fill(0);
   const sol=count(full,1,rnd).solution;
   const puzzle=sol.slice();
@@ -68,6 +70,18 @@ function gen(L,seed){
     if(count(puzzle.slice(),2).n!==1)puzzle[i]=v;else clues--;
   }
   return {puzzle,solution:sol,clues};
+}
+
+function gen(L,seed){
+  const rnd=mulberry32(seed),p=params(L);
+  let best=null,bestEffort=-1;
+  for(let t=0;t<p.tries;t++){
+    const g=makeOne(L,rnd,p);
+    const effort=p.tries>1?count(g.puzzle.slice(),2).nodes:0;
+    if(effort>bestEffort){best=g;bestEffort=effort}
+  }
+  best.effort=bestEffort;
+  return best;
 }
 
 return {gen,params,count,ROW,COL,BOX,mulberry32};

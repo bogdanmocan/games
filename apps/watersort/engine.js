@@ -11,7 +11,14 @@ function mulberry32(a){
   };
 }
 const CAP=4;
-function params(L){return {colors:Math.min(3+Math.floor((L-1)/2),12),empties:2}}
+// Creșterea nivelului: culori noi până la 20 (peste care solverul de verificare devine prea lent în browser),
+// apoi dificultatea crește prin amestec: tot mai puține unități vecine de aceeași culoare.
+const MAX_COLORS=20;
+function params(L){
+  const colors=Math.min(MAX_COLORS,3+Math.floor((L-1)/2));
+  return {colors,empties:2,maxAdj:Math.max(0,6-Math.floor(L/4))};
+}
+function adjacent(tubes){let n=0;for(const t of tubes)for(let i=1;i<t.length;i++)if(t[i]===t[i-1])n++;return n}
 function shuffle(a,rnd){for(let i=a.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
 
 const top=t=>t[t.length-1];
@@ -72,15 +79,17 @@ function solve(tubes,budget){
 
 function gen(L,seed){
   const p=params(L),rnd=mulberry32(seed);
-  for(let attempt=0;attempt<200;attempt++){
+  let maxAdj=p.maxAdj;
+  for(let attempt=0;attempt<3000;attempt++){
+    if(attempt&&attempt%60===0)maxAdj++; // dacă nu iese, relaxează puțin amestecul
     const units=[];
     for(let c=0;c<p.colors;c++)for(let k=0;k<CAP;k++)units.push(c);
     shuffle(units,rnd);
     const tubes=[];
     for(let i=0;i<p.colors;i++)tubes.push(units.slice(i*CAP,i*CAP+CAP));
     for(let i=0;i<p.empties;i++)tubes.push([]);
-    // fără tuburi gata de la început și fără prea multe perechi lipite (să nu fie prea ușor)
     if(tubes.some(t=>t.length===CAP&&uniform(t)))continue;
+    if(adjacent(tubes)>maxAdj)continue;
     const sol=solve(tubes,40000);
     if(sol)return {tubes,solution:sol,colors:p.colors};
   }

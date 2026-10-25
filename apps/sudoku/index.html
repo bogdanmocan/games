@@ -85,6 +85,27 @@ const gridEl=document.getElementById('grid'),padEl=document.getElementById('pad'
 const overlay=document.getElementById('overlay'),toastEl=document.getElementById('toast');
 const MAX_HINTS=3;
 
+// TEME: adaugă o intrare nouă ca să schimbi aspectul de la un anumit nivel (se folosește ultima cu from <= nivel).
+// Câmpuri: from = primul nivel, name, vars = variabile CSS suprascrise (lumină și, opțional, dark în câmpul dark).
+const THEMES=[
+  {from:1,name:'Clasic',vars:{}},
+  {from:30,name:'Albastru',vars:{'--bg':'#e7eef8','--cell':'#fbfdff','--peer':'#dde8f7','--same':'#bcd3f3','--sel':'#ffd98a','--user':'#1946c4'},
+   dark:{'--bg':'#101722','--cell':'#18222f','--peer':'#1f2d40','--same':'#2c4468','--sel':'#6b5a1d','--user':'#8fb4ff'}},
+  {from:60,name:'Salvie',vars:{'--bg':'#e9efe6','--cell':'#fbfdf8','--peer':'#dfe8da','--same':'#c3d9bc','--sel':'#ffe08a','--user':'#2f6b2f'},
+   dark:{'--bg':'#121a13','--cell':'#1a251c','--peer':'#223225','--same':'#33503a','--sel':'#6b5a1d','--user':'#8fd18f'}}
+];
+const themeFor=L=>THEMES.reduce((t,x)=>x.from<=L?x:t,THEMES[0]);
+let theme=THEMES[0];
+const THEME_KEYS=['--bg','--cell','--peer','--same','--sel','--user'];
+function applyTheme(L){
+  const t=themeFor(L),changed=t!==theme;
+  theme=t;
+  const dark=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches;
+  const v=Object.assign({},t.vars,dark&&t.dark?t.dark:{});
+  for(const k of THEME_KEYS){if(v[k])document.documentElement.style.setProperty(k,v[k]);else document.documentElement.style.removeProperty(k)}
+  return changed;
+}
+
 let level=1;
 try{const v=parseInt(localStorage.getItem('sudoku_level')||'1',10);if(v>0)level=v}catch(e){}
 let seed=0,puz=null,cur=[],notes=[],sel=-1,noteMode=false,mistakes=0,hints=0,undo=[],done=false,errSet=new Set();
@@ -94,9 +115,11 @@ function toast(m,ms){toastEl.textContent=m;toastEl.style.display='block';clearTi
 function start(L,sameSeed){
   level=L;
   if(!sameSeed)seed=Math.floor(Math.random()*4294967296);
+  const themeChanged=applyTheme(L);
   puz=SD.gen(L,seed);
   reset();
   document.getElementById('lvl').textContent='Nivel '+L;
+  if(themeChanged&&L>1)toast('Temă nouă: '+theme.name,3000);
 }
 function reset(){
   cur=puz.puzzle.slice();notes=new Array(81).fill(0);

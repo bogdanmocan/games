@@ -27,9 +27,9 @@ h1{font-size:18px;margin:0;font-weight:700}
 button{font:inherit;font-size:14px;font-weight:600;border:0;border-radius:10px;padding:7px 11px;background:var(--btn);color:var(--btnfg);cursor:pointer}
 button:disabled{opacity:.4;cursor:default}
 button:focus-visible{outline:3px solid #fff;outline-offset:2px}
-#wrap{flex:1;min-height:0;position:relative;width:100%;overflow:hidden;display:flex;align-items:center;justify-content:center}
-svg{display:block;overflow:hidden;touch-action:manipulation}
-.dot{fill:rgba(255,255,255,.14)}
+#wrap{flex:1;min-height:0;position:relative;width:100%;overflow:auto;display:flex}
+svg{display:block;flex:none;margin:auto;overflow:hidden;touch-action:manipulation}
+.dot{fill:var(--dot,rgba(255,255,255,.14))}
 .body{fill:none;stroke-linecap:round;stroke-linejoin:round}
 .hit{fill:none;stroke:transparent;stroke-linecap:round;stroke-linejoin:round;pointer-events:stroke;cursor:pointer}
 .hint{animation:pulse .5s ease-in-out 4}
@@ -67,7 +67,21 @@ svg{display:block;overflow:hidden;touch-action:manipulation}
 const NS='http://www.w3.org/2000/svg';
 const wrap=document.getElementById('wrap'),infoEl=document.getElementById('info'),lvlEl=document.getElementById('lvl');
 const overlay=document.getElementById('overlay'),toastEl=document.getElementById('toast');
-const COLORS=['#ff7a59','#4cc9f0','#a0e36b','#f7c948','#c77dff','#ff6fae','#2ec4b6','#ffa94d'];
+// TEME: adaugă o intrare nouă ca să schimbi aspectul de la un anumit nivel (se folosește ultima cu from <= nivel).
+// Câmpuri: from = primul nivel, name, bg = [centru, margine] pentru fundal, dot = culoarea punctelor, colors = paleta săgeților.
+const THEMES=[
+  {from:1,name:'Clasic',bg:['#22344b','#101823'],dot:'rgba(255,255,255,.14)',colors:['#ff7a59','#4cc9f0','#a0e36b','#f7c948','#c77dff','#ff6fae','#2ec4b6','#ffa94d']},
+  {from:30,name:'Neon',bg:['#2a1445','#0d0618'],dot:'rgba(255,120,255,.22)',colors:['#ff2e93','#00e5ff','#76ff03','#ffea00','#b388ff','#ff6e40','#1de9b6','#ff80ab']},
+  {from:60,name:'Pădure',bg:['#27402f','#0f1b14'],dot:'rgba(200,255,200,.16)',colors:['#e9c46a','#f4a261','#e76f51','#90be6d','#43aa8b','#b7e4c7','#d4a373','#faedcd']}
+];
+const themeFor=L=>THEMES.reduce((t,x)=>x.from<=L?x:t,THEMES[0]);
+let theme=THEMES[0];
+function applyTheme(L){
+  const t=themeFor(L),changed=t!==theme;
+  theme=t;
+  document.body.style.background='radial-gradient(circle at 50% 30%,'+t.bg[0]+','+t.bg[1]+')';
+  return changed;
+}
 
 let level=1;
 try{const v=parseInt(localStorage.getItem('arrows_level')||'1',10);if(v>0)level=v}catch(e){}
@@ -79,12 +93,14 @@ function el(name,attrs,parent){const e=document.createElementNS(NS,name);for(con
 function start(L,sameSeed){
   level=L;
   if(!sameSeed)seed=Math.floor(Math.random()*4294967296);
+  const themeChanged=applyTheme(L);
   game=AR.gen(L,seed);
   alive=game.arrows.map(()=>true);
   lives=game.p.lives;moves=0;over=false;busyAnims=0;
   overlay.style.display='none';
   lvlEl.textContent='Nivel '+L;
   build();refreshInfo();
+  if(themeChanged&&L>1)toast('Temă nouă: '+theme.name,3000);
 }
 
 function refreshInfo(){
@@ -125,18 +141,19 @@ function render(a,s){
 function build(){
   wrap.querySelectorAll('svg').forEach(s=>s.remove());
   const W=wrap.clientWidth,H=wrap.clientHeight,p=game.p,pad=8;
-  cell=Math.max(18,Math.floor(Math.min((W-pad*2)/p.cols,(H-pad*2)/p.rows)));
+  cell=Math.max(22,Math.floor(Math.min((W-pad*2)/p.cols,(H-pad*2)/p.rows)));
   svg=el('svg',{viewBox:'0 0 '+p.cols+' '+p.rows,width:cell*p.cols,height:cell*p.rows});
+  svg.style.setProperty('--dot',theme.dot);
   wrap.insertBefore(svg,wrap.firstChild);
   for(let y=0;y<p.rows;y++)for(let x=0;x<p.cols;x++)el('circle',{cx:x+.5,cy:y+.5,r:.05,class:'dot'},svg);
   els=[];
   for(const a of game.arrows){
-    const g=el('g',{},svg),color=COLORS[a.id%COLORS.length];
+    const g=el('g',{},svg),color=theme.colors[a.id%theme.colors.length];
     const body=el('polyline',{class:'body',stroke:color,'stroke-width':.3},g);
     const head=el('polygon',{class:'head',fill:color,stroke:color,'stroke-width':.02,'stroke-linejoin':'round'},g);
     const hit=el('polyline',{class:'hit','stroke-width':.85},g);
     els[a.id]={g,body,head,hit};
-    hit.addEventListener('pointerdown',e=>{e.preventDefault();tap(a)});
+    hit.addEventListener('click',()=>tap(a)); // click, nu pointerdown: o derulare pe tablă nu e o atingere
     render(a,0);
   }
 }
