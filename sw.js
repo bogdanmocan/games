@@ -1,5 +1,5 @@
 // Mărește VERSION la fiecare modificare a fișierelor pentru a invalida cache-ul.
-const VERSION='v3';
+const VERSION='v4';
 const CACHE='games-'+VERSION;
 const PRECACHE=[
   './',
@@ -15,7 +15,8 @@ const PRECACHE=[
   'apps/screw-puzzle/index.html',
   'apps/screw-puzzle/vendor/three.min.js',
   'apps/solitaire/',
-  'apps/solitaire/index.html'
+  'apps/solitaire/index.html',
+  'apps/solitaire/solver.js'
 ];
 
 self.addEventListener('install',e=>{

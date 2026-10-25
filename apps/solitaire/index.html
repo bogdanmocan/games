@@ -62,6 +62,7 @@ button[hidden]{display:none}
 #overlay h2{margin:0 0 6px;font-size:22px}
 #overlay p{margin:0 0 14px;color:#555;font-size:14px}
 #overlay button{background:#0f5132;color:#fff}
+#busy{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);z-index:1500;font-weight:600}
 </style>
 </head>
 <body>
@@ -76,6 +77,7 @@ button[hidden]{display:none}
 </header>
 <div id="wrap">
   <div id="board"></div>
+  <div id="busy">Se caută o mână câștigabilă…</div>
   <div id="overlay"><div class="box"><h2>Felicitări!</h2><p id="ovP"></p><button id="ovB" type="button">Joc nou</button></div></div>
 </div>
 
@@ -103,17 +105,33 @@ function load(){
   return false;
 }
 
+// Mâna e aleasă de solver (solver.js, într-un Worker) ca să fie mereu câștigabilă.
+const busyEl=document.getElementById('busy');
+let busy=false,worker=null;
+function applyDeck(deck){
+  const d=deck.map(id=>({id,s:(id/13)|0,r:id%13+1,up:false}));
+  const tab=[[],[],[],[],[],[],[]];
+  for(let i=0;i<7;i++)for(let j=0;j<=i;j++){const c=d.pop();c.up=j===i;tab[i].push(c)}
+  S={stock:d,waste:[],found:[[],[],[],[]],tab};
+  undo=[];moves=0;won=false;busy=false;
+  busyEl.style.display='none';overlay.style.display='none';
+  save();render();
+}
+function randomDeck(){
+  const a=[];for(let i=0;i<52;i++)a.push(i);
+  for(let i=51;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}
+  return a;
+}
 function deal(){
   stopAuto();
-  const deck=[];
-  for(let s=0;s<4;s++)for(let r=1;r<=13;r++)deck.push({id:s*13+r-1,s,r,up:false});
-  for(let i=deck.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[deck[i],deck[j]]=[deck[j],deck[i]]}
-  const tab=[[],[],[],[],[],[],[]];
-  for(let i=0;i<7;i++)for(let j=0;j<=i;j++){const c=deck.pop();c.up=j===i;tab[i].push(c)}
-  S={stock:deck,waste:[],found:[[],[],[],[]],tab};
-  undo=[];moves=0;won=false;
-  overlay.style.display='none';
-  save();render();
+  if(worker){worker.terminate();worker=null}
+  busy=true;busyEl.style.display='flex';overlay.style.display='none';
+  try{
+    worker=new Worker('solver.js');
+    worker.onmessage=e=>{worker.terminate();worker=null;applyDeck(e.data.deck)};
+    worker.onerror=()=>{if(worker){worker.terminate();worker=null}applyDeck(randomDeck())};
+    worker.postMessage({draw3});
+  }catch(err){applyDeck(randomDeck())}
 }
 
 // rules
@@ -278,7 +296,7 @@ function render(){
 // input: tap = auto-move, drag = manual move
 let drag=null;
 board.addEventListener('pointerdown',e=>{
-  if(won||autoTimer)return;
+  if(won||busy||autoTimer)return;
   const node=e.target.closest('[data-id]');
   if(!node)return;
   const src=locate(+node.dataset.id);if(!src)return;
@@ -311,17 +329,22 @@ window.addEventListener('pointerup',e=>{
 });
 window.addEventListener('pointercancel',()=>{if(drag){drag=null;render()}});
 board.addEventListener('click',e=>{
-  if(e.target.closest('[data-stock]')&&!autoTimer)drawStock();
+  if(e.target.closest('[data-stock]')&&!autoTimer&&!busy)drawStock();
 });
 
 undoBtn.addEventListener('click',()=>{
-  if(!undo.length||autoTimer)return;
+  if(!undo.length||autoTimer||busy)return;
   const v=JSON.parse(undo.pop());S=v.S;moves=v.moves;won=false;
   overlay.style.display='none';save();render();
 });
 autoBtn.addEventListener('click',startAuto);
-modeBtn.addEventListener('click',()=>{draw3=!draw3;save();render()});
+modeBtn.addEventListener('click',()=>{
+  if(busy)return;
+  if(moves&&!won&&!confirm('Schimbarea modului începe un joc nou. Continui?'))return;
+  draw3=!draw3;deal();
+});
 document.getElementById('new').addEventListener('click',()=>{
+  if(busy)return;
   if(!moves||won||confirm('Începi un joc nou?'))deal();
 });
 document.getElementById('ovB').addEventListener('click',deal);
