@@ -1,5 +1,5 @@
 // Mărește VERSION la fiecare modificare a fișierelor pentru a invalida cache-ul.
-const VERSION='v1';
+const VERSION='v2';
 const CACHE='games-'+VERSION;
 const PRECACHE=[
   './',
@@ -7,12 +7,15 @@ const PRECACHE=[
   'pwa.js',
   'manifest.webmanifest',
   'icons/icon.svg',
+  'icons/solitaire.svg',
   'icons/icon-192.png',
   'icons/icon-512.png',
   'icons/icon-maskable-512.png',
   'apps/screw-puzzle/',
   'apps/screw-puzzle/index.html',
-  'apps/screw-puzzle/vendor/three.min.js'
+  'apps/screw-puzzle/vendor/three.min.js',
+  'apps/solitaire/',
+  'apps/solitaire/index.html'
 ];
 
 self.addEventListener('install',e=>{

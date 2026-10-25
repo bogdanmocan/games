@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Solitaire</title>
+<link rel="manifest" href="../../manifest.webmanifest">
+<meta name="theme-color" content="#0f5132">
+<link rel="icon" href="../../icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../../icons/icon-192.png">
+<style>
+:root{--felt:#0f5132;--felt2:#0b3d26;--fg:#f2f6f3;--btn:#f2f6f3;--btnfg:#0b3d26}
+html,body{height:100%;margin:0}
+body{
+  background:var(--felt);color:var(--fg);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  display:flex;flex-direction:column;overflow:hidden;
+  -webkit-user-select:none;user-select:none;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+}
+header{
+  width:100%;max-width:760px;margin:0 auto;box-sizing:border-box;padding:8px 12px;
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+}
+#home{color:var(--fg);text-decoration:none;font-size:22px;line-height:1;padding:4px 6px}
+h1{font-size:18px;margin:0;font-weight:700}
+#info{font-size:13px;opacity:.8;flex:1;min-width:60px}
+button{
+  font:inherit;font-size:14px;font-weight:600;border:0;border-radius:10px;padding:7px 11px;
+  background:var(--btn);color:var(--btnfg);cursor:pointer;
+}
+button:disabled{opacity:.4;cursor:default}
+button:focus-visible{outline:3px solid #fff;outline-offset:2px}
+button[hidden]{display:none}
+#wrap{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;position:relative;width:100%;max-width:760px;margin:0 auto}
+#board{position:relative;width:100%;touch-action:pan-y}
+.slot{
+  position:absolute;box-sizing:border-box;border-radius:calc(var(--cw)*.1);
+  border:2px solid rgba(255,255,255,.22);background:rgba(0,0,0,.12);
+  display:flex;align-items:center;justify-content:center;
+  color:rgba(255,255,255,.35);font-size:calc(var(--cw)*.45);
+}
+.card{
+  position:absolute;box-sizing:border-box;border-radius:calc(var(--cw)*.1);
+  background:#fff;color:#111;box-shadow:0 1px 3px rgba(0,0,0,.45);
+  touch-action:none;font-size:calc(var(--cw)*.3);line-height:1;
+}
+.card.red{color:#c62828}
+.card .c{position:absolute;left:calc(var(--cw)*.07);top:calc(var(--cw)*.05);font-weight:700;display:flex;flex-direction:column;align-items:center}
+.card .c i{font-style:normal;font-size:.85em}
+.card .m{position:absolute;right:calc(var(--cw)*.1);bottom:calc(var(--cw)*.04);font-size:calc(var(--cw)*.55)}
+.card.back{
+  background:repeating-linear-gradient(45deg,#1d4ed8 0 6px,#2563eb 6px 12px);
+  border:3px solid #fff;
+}
+.card.dragging{z-index:1000;box-shadow:0 6px 16px rgba(0,0,0,.5);transition:none}
+#overlay{
+  position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.55);z-index:2000;
+}
+#overlay .box{background:#fff;color:#111;padding:22px 26px;border-radius:16px;text-align:center;min-width:220px}
+#overlay h2{margin:0 0 6px;font-size:22px}
+#overlay p{margin:0 0 14px;color:#555;font-size:14px}
+#overlay button{background:#0f5132;color:#fff}
+</style>
+</head>
+<body>
+<header>
+  <a id="home" href="../../" aria-label="Înapoi la colecție">&#8592;</a>
+  <h1>Solitaire</h1>
+  <span id="info"></span>
+  <button id="undo" type="button">Înapoi</button>
+  <button id="auto" type="button" hidden>Finalizează</button>
+  <button id="mode" type="button"></button>
+  <button id="new" type="button">Joc nou</button>
+</header>
+<div id="wrap">
+  <div id="board"></div>
+  <div id="overlay"><div class="box"><h2>Felicitări!</h2><p id="ovP"></p><button id="ovB" type="button">Joc nou</button></div></div>
+</div>
+
+<script>
+(function(){
+const SUITS=['♠','♥','♦','♣'];
+const RANKS=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+const isRed=s=>s===1||s===2;
+const wrap=document.getElementById('wrap'),board=document.getElementById('board');
+const infoEl=document.getElementById('info'),undoBtn=document.getElementById('undo');
+const autoBtn=document.getElementById('auto'),modeBtn=document.getElementById('mode');
+const overlay=document.getElementById('overlay');
+
+let S,undo=[],moves=0,draw3=false,won=false,autoTimer=null;
+let M={}; // layout metrics
+
+function save(){
+  try{localStorage.setItem('solitaire_state',JSON.stringify({S,moves,draw3,won}))}catch(e){}
+}
+function load(){
+  try{
+    const v=JSON.parse(localStorage.getItem('solitaire_state')||'null');
+    if(v&&v.S&&v.S.tab&&v.S.tab.length===7){S=v.S;moves=v.moves||0;draw3=!!v.draw3;won=!!v.won;return true}
+  }catch(e){}
+  return false;
+}
+
+function deal(){
+  stopAuto();
+  const deck=[];
+  for(let s=0;s<4;s++)for(let r=1;r<=13;r++)deck.push({id:s*13+r-1,s,r,up:false});
+  for(let i=deck.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[deck[i],deck[j]]=[deck[j],deck[i]]}
+  const tab=[[],[],[],[],[],[],[]];
+  for(let i=0;i<7;i++)for(let j=0;j<=i;j++){const c=deck.pop();c.up=j===i;tab[i].push(c)}
+  S={stock:deck,waste:[],found:[[],[],[],[]],tab};
+  undo=[];moves=0;won=false;
+  overlay.style.display='none';
+  save();render();
+}
+
+// rules
+const top=a=>a[a.length-1];
+function canFound(c,f){
+  const t=top(S.found[f]);
+  return t?(t.s===c.s&&c.r===t.r+1):c.r===1;
+}
+function canTab(c,i){
+  const t=top(S.tab[i]);
+  if(!t)return c.r===13;
+  return t.up&&isRed(t.s)!==isRed(c.s)&&t.r===c.r+1;
+}
+
+// source = {t:'waste'} | {t:'tab',i,k} | {t:'found',i}
+function getCards(src){
+  if(src.t==='waste')return S.waste.slice(-1);
+  if(src.t==='found')return S.found[src.i].slice(-1);
+  return S.tab[src.i].slice(src.k);
+}
+function locate(id){
+  if(S.waste.length&&top(S.waste).id===id)return {t:'waste'};
+  for(let i=0;i<4;i++)if(S.found[i].length&&top(S.found[i]).id===id)return {t:'found',i};
+  for(let i=0;i<7;i++){const k=S.tab[i].findIndex(c=>c.id===id);if(k>=0)return {t:'tab',i,k}}
+  return null;
+}
+function snap(){undo.push(JSON.stringify({S,moves}));if(undo.length>300)undo.shift()}
+
+function doMove(src,dst){
+  snap();
+  const cards=getCards(src);
+  if(src.t==='waste')S.waste.pop();
+  else if(src.t==='found')S.found[src.i].pop();
+  else{
+    S.tab[src.i].length=src.k;
+    const t=top(S.tab[src.i]);if(t)t.up=true;
+  }
+  if(dst.t==='found')S.found[dst.i].push(...cards);else S.tab[dst.i].push(...cards);
+  moves++;
+  afterChange();
+}
+function drawStock(){
+  if(won)return;
+  if(S.stock.length){
+    snap();
+    for(let n=draw3?3:1;n>0&&S.stock.length;n--){const c=S.stock.pop();c.up=true;S.waste.push(c)}
+  }else if(S.waste.length){
+    snap();
+    while(S.waste.length){const c=S.waste.pop();c.up=false;S.stock.push(c)}
+  }else return;
+  moves++;
+  afterChange();
+}
+function afterChange(){
+  if(S.found.every(f=>f.length===13)){
+    won=true;stopAuto();
+    document.getElementById('ovP').textContent='Ai terminat jocul în '+moves+' mutări.';
+    overlay.style.display='flex';
+  }
+  save();render();
+}
+
+function autoMove(src){
+  const cards=getCards(src);
+  if(!cards.length||!cards[0].up)return false;
+  const c=cards[0];
+  if(cards.length===1&&src.t!=='found'){
+    for(let f=0;f<4;f++)if(canFound(c,f)){doMove(src,{t:'found',i:f});return true}
+  }
+  for(let i=0;i<7;i++){
+    if(src.t==='tab'&&src.i===i)continue;
+    if(!canTab(c,i))continue;
+    if(!S.tab[i].length&&src.t==='tab'&&src.k===0)continue; // king already at the bottom
+    doMove(src,{t:'tab',i});return true;
+  }
+  return false;
+}
+
+// auto-complete once everything is face up
+function canAuto(){return !won&&S.tab.every(p=>p.every(c=>c.up))}
+function stopAuto(){if(autoTimer){clearInterval(autoTimer);autoTimer=null}}
+function autoStep(){
+  const srcs=[{t:'waste'}];
+  for(let i=0;i<7;i++)if(S.tab[i].length)srcs.push({t:'tab',i,k:S.tab[i].length-1});
+  for(const src of srcs){
+    const cs=getCards(src);if(!cs.length)continue;
+    for(let f=0;f<4;f++)if(canFound(cs[0],f)){doMove(src,{t:'found',i:f});return true}
+  }
+  if(S.stock.length||S.waste.length){drawStock();return 'draw'}
+  return false;
+}
+function startAuto(){
+  if(autoTimer||!canAuto())return;
+  let idle=0;
+  autoTimer=setInterval(()=>{
+    const r=autoStep();
+    idle=r===true?0:idle+1;
+    if(!r||idle>60||won)stopAuto();
+  },90);
+}
+
+// layout + render
+function metrics(){
+  const W=wrap.clientWidth||360;
+  const g=Math.max(4,Math.round(W*.014));
+  const cw=Math.floor((W-g*8)/7),ch=Math.round(cw*1.4);
+  M={W,g,cw,ch,x:col=>g+col*(cw+g),y0:6,tabTop:6+ch+Math.round(cw*.3),dn:Math.round(ch*.17),up:Math.round(ch*.3)};
+}
+function el(cls,x,y,html){
+  const d=document.createElement('div');
+  d.className=cls;d.style.left=x+'px';d.style.top=y+'px';d.style.width=M.cw+'px';d.style.height=M.ch+'px';
+  if(html)d.innerHTML=html;return d;
+}
+function cardEl(c,x,y,z){
+  const d=el('card'+(c.up?(isRed(c.s)?' red':''):' back'),x,y,
+    c.up?'<div class="c"><b>'+RANKS[c.r-1]+'</b><i>'+SUITS[c.s]+'</i></div><div class="m">'+SUITS[c.s]+'</div>':'');
+  d.dataset.id=c.id;d.style.zIndex=z;return d;
+}
+
+function render(){
+  metrics();
+  board.style.setProperty('--cw',M.cw+'px');
+  board.textContent='';
+  const add=n=>board.appendChild(n);
+
+  // stock
+  if(S.stock.length){
+    const d=el('card back',M.x(0),M.y0);d.dataset.stock='1';add(d);
+  }else{
+    const d=el('slot',M.x(0),M.y0,S.waste.length?'↻':'');d.dataset.stock='1';add(d);
+  }
+  // waste
+  add(el('slot',M.x(1),M.y0));
+  const shown=S.waste.slice(-(draw3?3:1));
+  shown.forEach((c,n)=>add(cardEl(c,M.x(1)+n*Math.round(M.cw*.22),M.y0,10+n)));
+  // foundations
+  for(let f=0;f<4;f++){
+    const p=S.found[f];
+    add(el('slot',M.x(3+f),M.y0,p.length?'':'A'));
+    if(p.length)add(cardEl(top(p),M.x(3+f),M.y0,10));
+  }
+  // tableau
+  let maxY=0;
+  for(let i=0;i<7;i++){
+    add(el('slot',M.x(i),M.tabTop));
+    let y=M.tabTop;
+    S.tab[i].forEach((c,k)=>{
+      add(cardEl(c,M.x(i),y,10+k));
+      maxY=Math.max(maxY,y+M.ch);
+      y+=c.up?M.up:M.dn;
+    });
+    maxY=Math.max(maxY,M.tabTop+M.ch);
+  }
+  board.style.height=(maxY+M.ch*.6)+'px';
+
+  undoBtn.disabled=!undo.length;
+  autoBtn.hidden=!canAuto();
+  modeBtn.textContent='Trage: '+(draw3?3:1);
+  infoEl.textContent=moves+' mutări';
+}
+
+// input: tap = auto-move, drag = manual move
+let drag=null;
+board.addEventListener('pointerdown',e=>{
+  if(won||autoTimer)return;
+  const node=e.target.closest('[data-id]');
+  if(!node)return;
+  const src=locate(+node.dataset.id);if(!src)return;
+  const cards=getCards(src);if(!cards.length||!cards[0].up)return;
+  drag={src,cards,els:cards.map(c=>board.querySelector('[data-id="'+c.id+'"]')),sx:e.clientX,sy:e.clientY,moved:false};
+});
+window.addEventListener('pointermove',e=>{
+  if(!drag)return;
+  const dx=e.clientX-drag.sx,dy=e.clientY-drag.sy;
+  if(!drag.moved){
+    if(Math.hypot(dx,dy)<=6)return;
+    drag.moved=true;drag.els.forEach(n=>n.classList.add('dragging'));
+  }
+  drag.els.forEach(n=>n.style.transform='translate('+dx+'px,'+dy+'px)');
+});
+function dropTarget(e){
+  const r=board.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
+  const col=Math.floor((x-M.g/2)/(M.cw+M.g));
+  if(col<0||col>6)return null;
+  if(y<M.tabTop-M.g)return col>=3?{t:'found',i:col-3}:null;
+  return {t:'tab',i:col};
+}
+window.addEventListener('pointerup',e=>{
+  if(!drag)return;
+  const d=drag;drag=null;
+  if(!d.moved){if(!autoMove(d.src))render();return}
+  const dst=dropTarget(e);
+  const ok=dst&&(dst.t==='found'?(d.cards.length===1&&canFound(d.cards[0],dst.i)):canTab(d.cards[0],dst.i));
+  if(ok&&!(dst.t==='tab'&&d.src.t==='tab'&&d.src.i===dst.i))doMove(d.src,dst);else render();
+});
+window.addEventListener('pointercancel',()=>{if(drag){drag=null;render()}});
+board.addEventListener('click',e=>{
+  if(e.target.closest('[data-stock]')&&!autoTimer)drawStock();
+});
+
+undoBtn.addEventListener('click',()=>{
+  if(!undo.length||autoTimer)return;
+  const v=JSON.parse(undo.pop());S=v.S;moves=v.moves;won=false;
+  overlay.style.display='none';save();render();
+});
+autoBtn.addEventListener('click',startAuto);
+modeBtn.addEventListener('click',()=>{draw3=!draw3;save();render()});
+document.getElementById('new').addEventListener('click',()=>{
+  if(!moves||won||confirm('Începi un joc nou?'))deal();
+});
+document.getElementById('ovB').addEventListener('click',deal);
+
+if(window.ResizeObserver)new ResizeObserver(()=>render()).observe(wrap);
+else window.addEventListener('resize',render);
+
+if(load()){if(won){document.getElementById('ovP').textContent='Ai terminat jocul în '+moves+' mutări.';overlay.style.display='flex'}render()}else deal();
+})();
+</script>
+<script src="../../pwa.js"></script>
+</body>
+</html>
