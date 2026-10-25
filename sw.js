@@ -1,10 +1,11 @@
 // Mărește VERSION la fiecare modificare a fișierelor pentru a invalida cache-ul.
-const VERSION='v14';
+const VERSION='v15';
 const CACHE='games-'+VERSION;
 const PRECACHE=[
   './',
   'index.html',
   'pwa.js',
+  'breaks.js',
   'manifest.webmanifest',
   'icons/icon.svg',
   'icons/solitaire.svg',
