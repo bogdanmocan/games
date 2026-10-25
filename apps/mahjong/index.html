@@ -33,7 +33,6 @@ button:focus-visible{outline:3px solid #fff;outline-offset:2px}
   transition:transform .12s,opacity .22s,filter .15s;cursor:pointer;
 }
 .tile svg{width:100%;height:100%;display:block;pointer-events:none}
-.tile.blocked{filter:brightness(.72)}
 .tile.sel{transform:translate(-3px,-3px);box-shadow:var(--d) var(--d) 0 #9c9272,0 0 0 3px #ffd54f}
 .tile.hint{animation:hint .5s ease-in-out 3}
 .tile.shake{animation:shake .25s}
@@ -155,11 +154,9 @@ function layout(){
 }
 
 function refresh(){
-  const al=alive();
   tiles.forEach((t,i)=>{
     const e=els[i];
     e.classList.toggle('gone',!t.alive);
-    e.classList.toggle('blocked',t.alive&&!MJ.isFree(g,al,i));
     e.classList.toggle('sel',i===sel);
   });
   const n=remaining();
