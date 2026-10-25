@@ -65,6 +65,7 @@ button:focus-visible{outline:3px solid #fff;outline-offset:2px}
 </div>
 
 <script src="engine.js"></script>
+<script src="layouts.js"></script>
 <script>
 (function(){
 const wrap=document.getElementById('wrap'),board=document.getElementById('board');
@@ -97,10 +98,25 @@ function toast(msg,ms){
   clearTimeout(toast.t);toast.t=setTimeout(()=>{toastEl.style.display='none'},ms||2600);
 }
 
+function customLayouts(){
+  let l={};
+  try{l=JSON.parse(sessionStorage.getItem('mahjong_layouts')||'{}')}catch(e){}
+  return Object.assign({},window.MJ_LAYOUTS||{},l);
+}
+
 function setupLevel(L){
   level=L;setNo=MJ.setOf(L);fresh=MJ.freshSlots(setNo);
   const p=MJ.levelParams(L);
   let list=null,types=null;
+  // formă personalizată pentru acest nivel (din editor.html / layouts.js), dacă există
+  const custom=customLayouts()[L];
+  if(custom&&custom.length>=2&&custom.length%2===0){
+    list=custom.map(a=>({x:a[0],y:a[1],z:a[2]}));
+    g=MJ.buildGraph(list);
+    const m=Math.min(p.M,list.length/2),pairs=[];
+    for(let i=0;i<list.length/2;i++)pairs.push(i%m);
+    types=MJ.assignTypes(g,list.map(()=>true),pairs,rnd);
+  }
   for(let a=0;a<30&&!types;a++){
     list=MJ.genLayout(p.N,p.Z,rnd);
     g=MJ.buildGraph(list);

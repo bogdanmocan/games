@@ -1,5 +1,5 @@
 // Mărește VERSION la fiecare modificare a fișierelor pentru a invalida cache-ul.
-const VERSION='v7';
+const VERSION='v8';
 const CACHE='games-'+VERSION;
 const PRECACHE=[
   './',
@@ -20,7 +20,9 @@ const PRECACHE=[
   'apps/solitaire/solver.js',
   'apps/mahjong/',
   'apps/mahjong/index.html',
-  'apps/mahjong/engine.js'
+  'apps/mahjong/engine.js',
+  'apps/mahjong/layouts.js',
+  'apps/mahjong/editor.html'
 ];
 
 self.addEventListener('install',e=>{

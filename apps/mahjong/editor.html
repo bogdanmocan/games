@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Editor forme Mahjong</title>
+<style>
+:root{--bg:#17302a;--fg:#f2f6f3;--muted:#a9bdb5;--card:#1f3a34;--btn:#f2f6f3;--btnfg:#17302a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom))}
+main{max-width:900px;margin:0 auto}
+h1{font-size:20px;margin:6px 0 4px}
+a{color:var(--fg)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin:10px 0}
+label{display:flex;flex-direction:column;font-size:12px;color:var(--muted);gap:3px}
+input[type=number]{font:inherit;width:84px;padding:7px;border-radius:8px;border:0}
+button{font:inherit;font-size:14px;font-weight:600;border:0;border-radius:10px;padding:8px 12px;background:var(--btn);color:var(--btnfg);cursor:pointer}
+button.sec{background:#2d4f47;color:var(--fg)}
+button:disabled{opacity:.4;cursor:default}
+#status{font-size:14px;margin:6px 0;min-height:20px}
+.ok{color:#7ff0b0}.bad{color:#ff9a9a}
+#stage{position:relative;width:100%;height:min(62vh,560px);background:var(--card);border-radius:14px;overflow:hidden}
+.t{position:absolute;box-sizing:border-box;border-radius:12%;border:1px solid rgba(0,0,0,.45);
+  display:flex;align-items:center;justify-content:center;font-size:11px;color:rgba(0,0,0,.55);cursor:default;
+  box-shadow:var(--d) var(--d) 0 rgba(0,0,0,.35)}
+.t.top{cursor:pointer}
+.t.top:hover{outline:3px solid #ff6b6b}
+#saved{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+#saved button{padding:5px 10px;font-size:13px}
+textarea{width:100%;height:90px;border-radius:8px;border:0;padding:8px;font:12px monospace}
+</style>
+</head>
+<body>
+<main>
+  <a href="../../">&#8592; Colecție</a> · <a href="./">Joacă Mahjong</a>
+  <h1>Generator de forme Mahjong</h1>
+  <div style="font-size:13px;color:var(--muted)">Generezi forma (doar poziții, fără modele) pentru un nivel. Click pe o piesă de sus o șterge. Jocul folosește forma salvată în locul celei generate automat.</div>
+
+  <div class="row">
+    <label>Nivel<input id="lv" type="number" min="1" value="6"></label>
+    <label>Piese (par)<input id="n" type="number" min="2" max="144" step="2"></label>
+    <label>Straturi<input id="z" type="number" min="1" max="6"></label>
+    <button id="gen" type="button">Generează</button>
+    <button id="save" type="button">Salvează pentru nivel</button>
+    <button id="del" class="sec" type="button">Revino la forma automată</button>
+  </div>
+  <div id="status"></div>
+  <div id="stage"></div>
+
+  <h2 style="font-size:15px;margin:14px 0 4px">Niveluri personalizate</h2>
+  <div id="saved"></div>
+  <div class="row">
+    <button id="exp" type="button">Descarcă layouts.js</button>
+    <button id="copy" class="sec" type="button">Copiază JSON</button>
+    <button id="imp" class="sec" type="button">Importă JSON</button>
+  </div>
+  <textarea id="io" placeholder='JSON pentru import: {"6":[[x,y,z],...]}'></textarea>
+  <div style="font-size:12px;color:var(--muted);margin-top:6px">Salvările sunt valabile doar în sesiunea curentă (fila/fereastra deschisă) și se văd imediat în joc. Pentru ca forma să apară pentru toată lumea, descarcă layouts.js, pune-l în apps/mahjong/ și fă commit.</div>
+</main>
+
+<script src="engine.js"></script>
+<script src="layouts.js"></script>
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+const stage=$('stage'),status=$('status');
+const KEY='mahjong_layouts';
+function local(){try{return JSON.parse(sessionStorage.getItem(KEY)||'{}')}catch(e){return {}}}
+function all(){return Object.assign({},window.MJ_LAYOUTS||{},local())}
+function putLocal(o){try{sessionStorage.setItem(KEY,JSON.stringify(o))}catch(e){status.textContent='Nu pot salva în această sesiune.'}}
+
+let tiles=[];
+const rnd=Math.random;
+
+function level(){return Math.max(1,parseInt($('lv').value,10)||1)}
+function params(){
+  const p=MJ.levelParams(level());
+  return {N:parseInt($('n').value,10)||p.N,Z:parseInt($('z').value,10)||p.Z};
+}
+function resetParams(){
+  const p=MJ.levelParams(level());$('n').value=p.N;$('z').value=p.Z;
+}
+function loadLevel(){
+  const c=all()[level()];
+  resetParams();
+  if(c){tiles=c.map(a=>({x:a[0],y:a[1],z:a[2]}));$('n').value=tiles.length;$('z').value=Math.max(...tiles.map(t=>t.z))+1}
+  else generate();
+  draw();
+}
+function generate(){
+  const {N,Z}=params();
+  tiles=MJ.genLayout(N+(N%2),Z,rnd);
+}
+
+function solvable(){
+  if(!tiles.length||tiles.length%2)return false;
+  const g=MJ.buildGraph(tiles),pairs=[];
+  for(let i=0;i<tiles.length/2;i++)pairs.push(i);
+  return !!MJ.assignTypes(g,tiles.map(()=>true),pairs,rnd);
+}
+
+function draw(){
+  stage.textContent='';
+  const W=stage.clientWidth,H=stage.clientHeight,k=1.3,pad=14;
+  if(!tiles.length){status.textContent='Nicio piesă.';status.className='bad';$('save').disabled=true;return}
+  let minX=1e9,maxX=-1e9,minY=1e9,maxY=-1e9,maxZ=0;
+  for(const t of tiles){minX=Math.min(minX,t.x);maxX=Math.max(maxX,t.x);minY=Math.min(minY,t.y);maxY=Math.max(maxY,t.y);maxZ=Math.max(maxZ,t.z)}
+  const bw=maxX-minX+1,bh=maxY-minY+1,dz=.1;
+  const tw=Math.min((W-2*pad)/(bw+maxZ*dz+.1),(H-2*pad)/(bh*k+maxZ*dz+.1),72),th=tw*k,d=tw*dz;
+  const offX=(W-bw*tw+maxZ*d)/2,offY=(H-bh*th+maxZ*d)/2;
+  stage.style.setProperty('--d',Math.max(2,d*.8)+'px');
+  const hasAbove=t=>tiles.some(o=>o.z===t.z+1&&Math.abs(o.x-t.x)<.999&&Math.abs(o.y-t.y)<.999);
+  tiles.forEach(t=>{
+    const e=document.createElement('div');
+    const top=!hasAbove(t);
+    e.className='t'+(top?' top':'');
+    e.style.width=tw+'px';e.style.height=th+'px';
+    e.style.left=(offX+(t.x-minX)*tw-t.z*d)+'px';
+    e.style.top=(offY+(t.y-minY)*th-t.z*d)+'px';
+    e.style.zIndex=t.z*10000+Math.round((t.y-minY)*100)+Math.round((t.x-minX)*4);
+    e.style.background='hsl('+(150-t.z*28)+',45%,'+(55+t.z*7)+'%)';
+    e.textContent=t.z+1;
+    if(top)e.addEventListener('click',()=>{tiles.splice(tiles.indexOf(t),1);draw()});
+    stage.appendChild(e);
+  });
+  const odd=tiles.length%2;
+  const ok=!odd&&solvable();
+  status.className=ok?'ok':'bad';
+  status.textContent=tiles.length+' piese, '+(maxZ+1)+' straturi — '+(odd?'număr impar, șterge o piesă sau generează din nou':ok?'rezolvabilă ✓':'nu se poate goli în perechi, generează din nou');
+  $('save').disabled=!ok;
+  $('n').value=tiles.length;
+  renderSaved();
+}
+function renderSaved(){
+  const box=$('saved'),data=all();
+  box.textContent='';
+  const keys=Object.keys(data).sort((a,b)=>a-b);
+  if(!keys.length){box.textContent='Niciun nivel personalizat încă.';return}
+  for(const k of keys){
+    const b=document.createElement('button');b.type='button';b.className='sec';b.textContent='Nivel '+k;
+    b.addEventListener('click',()=>{$('lv').value=k;loadLevel()});
+    box.appendChild(b);
+  }
+}
+
+$('gen').addEventListener('click',()=>{generate();draw()});
+$('lv').addEventListener('change',loadLevel);
+$('n').addEventListener('change',()=>{generate();draw()});
+$('z').addEventListener('change',()=>{generate();draw()});
+$('save').addEventListener('click',()=>{
+  const o=local();o[level()]=tiles.map(t=>[t.x,t.y,t.z]);putLocal(o);
+  renderSaved();status.className='ok';status.textContent='Salvat pentru nivelul '+level()+'.';
+});
+$('del').addEventListener('click',()=>{
+  const o=local();delete o[level()];putLocal(o);
+  loadLevel();
+  if(window.MJ_LAYOUTS&&window.MJ_LAYOUTS[level()])status.textContent='Forma din layouts.js pentru acest nivel rămâne; șterge-o din fișier.';
+});
+$('exp').addEventListener('click',()=>{
+  const txt='// Forme personalizate pe nivel, generate cu editor.html (Descarcă layouts.js).\n// Format: { "6": [[x, y, z], ...], ... } — x/y în dimensiuni de piesă, z = strat.\nwindow.MJ_LAYOUTS='+JSON.stringify(all())+';\n';
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([txt],{type:'text/javascript'}));a.download='layouts.js';a.click();
+});
+$('copy').addEventListener('click',()=>{
+  const txt=JSON.stringify(all());$('io').value=txt;
+  if(navigator.clipboard)navigator.clipboard.writeText(txt).catch(()=>{});
+});
+$('imp').addEventListener('click',()=>{
+  try{
+    const v=JSON.parse($('io').value);
+    if(!v||typeof v!=='object')throw 0;
+    const o=local();
+    for(const k in v)if(Array.isArray(v[k])&&v[k].every(a=>Array.isArray(a)&&a.length===3))o[k]=v[k];
+    putLocal(o);loadLevel();status.className='ok';status.textContent='Import reușit.';
+  }catch(e){status.className='bad';status.textContent='JSON invalid.'}
+});
+window.addEventListener('resize',draw);
+loadLevel();
+})();
+</script>
+</body>
+</html>
