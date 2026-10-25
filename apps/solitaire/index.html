@@ -99,7 +99,7 @@ const autoBtn=document.getElementById('auto'),modeBtn=document.getElementById('m
 const overlay=document.getElementById('overlay');
 const levelEl=document.getElementById('level');
 
-let S,undo=[],moves=0,draw3=false,won=false,autoTimer=null,level="easy";
+let S,undo=[],moves=0,draw3=false,won=false,autoTimer=null,autoPending=false,level="easy";
 let M={}; // layout metrics
 
 function save(){
@@ -201,6 +201,10 @@ function afterChange(){
     overlay.style.display='flex';
   }
   save();render();
+  if(!won&&!autoTimer&&!autoPending&&canAuto()){
+    autoPending=true;
+    setTimeout(()=>{autoPending=false;if(!won&&!autoTimer)startAuto()},500);
+  }
 }
 
 function autoMove(src){
@@ -219,8 +223,32 @@ function autoMove(src){
   return false;
 }
 
-// auto-complete once everything is face up
-function canAuto(){return !won&&S.tab.every(p=>p.every(c=>c.up))}
+// Finalizare automată: când tot e întors și jocul se termină doar cu mutări către fundații
+// (inclusiv extrageri din pachet), simulăm pe o copie; dacă ajunge la capăt, putem rula singuri.
+function finishable(){
+  const T=JSON.parse(JSON.stringify({stock:S.stock,waste:S.waste,found:S.found,tab:S.tab}));
+  const fits=(c,f)=>{const t=top(T.found[f]);return t?(t.s===c.s&&c.r===t.r+1):c.r===1};
+  let idle=0;
+  for(let guard=0;guard<4000;guard++){
+    if(T.found.every(f=>f.length===13))return true;
+    let moved=false;
+    const srcs=[T.waste];
+    for(let i=0;i<7;i++)srcs.push(T.tab[i]);
+    for(const pile of srcs){
+      const c=top(pile);
+      if(!c||!c.up)continue;
+      for(let f=0;f<4;f++)if(fits(c,f)){T.found[f].push(pile.pop());moved=true;break}
+      if(moved)break;
+    }
+    if(moved){idle=0;continue}
+    if(T.stock.length){for(let n=draw3?3:1;n>0&&T.stock.length;n--){const c=T.stock.pop();c.up=true;T.waste.push(c)}}
+    else if(T.waste.length){while(T.waste.length){const c=T.waste.pop();c.up=false;T.stock.push(c)}}
+    else return false;
+    if(++idle>T.stock.length+T.waste.length+3)return false; // un ciclu complet fără nicio mutare = blocat
+  }
+  return false;
+}
+function canAuto(){return !won&&S.tab.every(p=>p.every(c=>c.up))&&finishable()}
 function stopAuto(){if(autoTimer){clearInterval(autoTimer);autoTimer=null}}
 function autoStep(){
   const srcs=[{t:'waste'}];
@@ -238,8 +266,9 @@ function startAuto(){
   autoTimer=setInterval(()=>{
     const r=autoStep();
     idle=r===true?0:idle+1;
-    if(!r||idle>60||won)stopAuto();
+    if(!r||idle>60||won){stopAuto();render()}
   },90);
+  render();
 }
 
 // layout + render
@@ -298,7 +327,8 @@ function render(){
   board.style.height=(maxY+M.ch*.6)+'px';
 
   undoBtn.disabled=!undo.length;
-  autoBtn.hidden=!canAuto();
+  autoBtn.hidden=!autoTimer&&!canAuto();
+  autoBtn.textContent=autoTimer?'Oprește':'Finalizează';
   modeBtn.textContent='Trage: '+(draw3?3:1);
   levelEl.value=level;
   infoEl.textContent=moves+' mutări';
@@ -348,7 +378,7 @@ undoBtn.addEventListener('click',()=>{
   const v=JSON.parse(undo.pop());S=v.S;moves=v.moves;won=false;
   overlay.style.display='none';save();render();
 });
-autoBtn.addEventListener('click',startAuto);
+autoBtn.addEventListener('click',()=>{if(autoTimer){stopAuto();render()}else startAuto()});
 levelEl.addEventListener('change',()=>{
   if(busy||(moves&&!won&&!confirm('Schimbarea nivelului începe un joc nou. Continui?'))){levelEl.value=level;return}
   level=levelEl.value;deal();
