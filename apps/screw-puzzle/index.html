@@ -137,7 +137,7 @@ const hitGeo=new THREE.CylinderGeometry(19,19,6,12);hitGeo.rotateX(Math.PI/2);
 const slotDark=new THREE.MeshStandardMaterial({color:0x1a1a1a,roughness:.8});
 const hitMat=new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false});
 const screwMats={};
-function screwMat(c){return screwMats[c]||(screwMats[c]=new THREE.MeshStandardMaterial({color:c,roughness:.35,metalness:.3}))}
+function screwMat(c){return screwMats[c]||(screwMats[c]=new THREE.MeshBasicMaterial({color:c}))}
 function makeScrew(color){
   const g=new THREE.Group();
   const head=new THREE.Mesh(headGeo,screwMat(color));head.castShadow=true;g.add(head);
@@ -187,7 +187,7 @@ function buildPlate(p){
 
 function buildBox(b,i){
   const g=new THREE.Group();
-  const body=new THREE.Mesh(extrude(150,64,12,10,2),new THREE.MeshStandardMaterial({color:b.color,roughness:.45,metalness:.15}));
+  const body=new THREE.Mesh(extrude(150,64,12,10,2),new THREE.MeshBasicMaterial({color:b.color}));
   body.castShadow=true;body.receiveShadow=true;g.add(body);
   for(let n=0;n<3;n++){
     const r=new THREE.Mesh(boxRecGeo,boxRecMat);r.position.set(-45+n*45,0,7.4);g.add(r);
