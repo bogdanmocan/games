@@ -57,7 +57,7 @@ button:focus-visible{outline:3px solid #fff;outline-offset:2px}
   <button id="hint" type="button">Indiciu</button>
   <button id="shuffle" type="button">Amestecă</button>
   <button id="again" type="button">Reîncearcă</button>
-  <button id="fresh" type="button">Joc nou</button>
+  <button id="fresh" type="button">Nivel random</button>
 </header>
 <div id="wrap">
   <div id="board"></div>
@@ -267,7 +267,7 @@ document.getElementById('hint').addEventListener('click',()=>{
 });
 document.getElementById('shuffle').addEventListener('click',()=>{if(!won)reshuffle(false)});
 document.getElementById('again').addEventListener('click',()=>{if(!undo.length&&remaining()===tiles.length&&initialJson===JSON.stringify(tiles))return;if(won||confirm('Reîncerci același puzzle de la început?'))restartLevel()});
-document.getElementById('fresh').addEventListener('click',()=>{if(remaining()===tiles.length&&!undo.length||won||confirm('Începi un joc nou pe acest nivel, cu altă aranjare?'))setupLevel(level)});
+document.getElementById('fresh').addEventListener('click',()=>{if(remaining()===tiles.length&&!undo.length||won||confirm('Generezi alt puzzle random pentru acest nivel?'))setupLevel(level)});
 document.getElementById('ovB').addEventListener('click',()=>setupLevel(level+1));
 
 if(window.ResizeObserver)new ResizeObserver(layout).observe(wrap);
