@@ -290,7 +290,7 @@ window.addEventListener('pointermove',e=>{
   const dx=e.clientX-drag.sx,dy=e.clientY-drag.sy;
   if(!drag.moved){
     if(Math.hypot(dx,dy)<=6)return;
-    drag.moved=true;drag.els.forEach(n=>n.classList.add('dragging'));
+    drag.moved=true;drag.els.forEach((n,k)=>{n.classList.add('dragging');n.style.zIndex=1000+k});
   }
   drag.els.forEach(n=>n.style.transform='translate('+dx+'px,'+dy+'px)');
 });
