@@ -76,7 +76,7 @@ const overlay=document.getElementById('overlay');
 let level=1;
 try{const v=parseInt(localStorage.getItem('mahjong_level')||'1',10);if(v>0)level=v}catch(e){}
 
-let tiles=[],g=null,els=[],sel=-1,undo=[],setNo=0,fresh=[],won=false,tw=40;
+let initialJson='',tiles=[],g=null,els=[],sel=-1,undo=[],setNo=0,fresh=[],won=false,tw=40;
 const rnd=()=>Math.random();
 const svgCache={};
 function svgFor(slot){
@@ -129,11 +129,19 @@ function setupLevel(L){
     types=MJ.assignTypes(g,list.map(()=>true),pairs,rnd);
   }
   tiles=list.map((t,i)=>({x:t.x,y:t.y,z:t.z,t:types[i],alive:true}));
+  initialJson=JSON.stringify(tiles); // puzzle-ul de start, pentru "Reia"
   undo=[];sel=-1;won=false;
   overlay.style.display='none';
   lvlEl.textContent='Nivel '+L;
   buildDom();
   if(L>1&&(L-1)%10===0)toast('Set nou de piese! Aproximativ 20% dintre modele s-au schimbat (marcate cu un punct auriu).',5000);
+}
+
+// "Reia": același puzzle (aceleași forme și modele), de la început
+function restartLevel(){
+  tiles=JSON.parse(initialJson);g=MJ.buildGraph(tiles);
+  undo=[];sel=-1;won=false;overlay.style.display='none';
+  buildDom();
 }
 
 function buildDom(){
@@ -257,7 +265,7 @@ document.getElementById('hint').addEventListener('click',()=>{
   }
 });
 document.getElementById('shuffle').addEventListener('click',()=>{if(!won)reshuffle(false)});
-document.getElementById('again').addEventListener('click',()=>{if(!won&&(remaining()===tiles.length||confirm('Reiei nivelul cu un layout nou?')))setupLevel(level)});
+document.getElementById('again').addEventListener('click',()=>{if(!undo.length&&remaining()===tiles.length&&initialJson===JSON.stringify(tiles))return;if(won||confirm('Reiei același nivel de la început?'))restartLevel()});
 document.getElementById('ovB').addEventListener('click',()=>setupLevel(level+1));
 
 if(window.ResizeObserver)new ResizeObserver(layout).observe(wrap);
