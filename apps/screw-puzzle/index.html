@@ -33,6 +33,7 @@ header{
 }
 .title{display:flex;align-items:baseline;gap:10px}
 h1{font-size:18px;margin:0;font-weight:700}
+header .btns{display:flex;gap:6px}
 #home{color:var(--fg);text-decoration:none;font-size:22px;line-height:1;align-self:center;padding:4px 6px}
 #rem{font-size:13px;color:var(--muted)}
 .hint{font-size:12px;color:var(--muted);padding:0 14px 6px;max-width:520px;box-sizing:border-box;text-align:center}
@@ -58,7 +59,7 @@ button:focus-visible{outline:3px solid var(--fg);outline-offset:2px}
 <body>
 <header>
   <div class="title"><a id="home" href="../../" aria-label="Înapoi la colecție">&#8592;</a><h1 id="lvl">Nivel 1</h1><span id="rem"></span></div>
-  <button id="restart" type="button">Reia nivelul</button>
+  <div class="btns"><button id="restart" type="button">Reîncearcă</button><button id="fresh" type="button">Joc nou</button></div>
 </header>
 <div class="hint">Șurub liber: scoate-l. Bloc: transparent 80% / opac. Trage: rotește camera.</div>
 <div id="wrap">
@@ -511,6 +512,7 @@ function loop(now){
 }
 
 document.getElementById('restart').addEventListener('click',()=>genLevel(level,true));
+document.getElementById('fresh').addEventListener('click',()=>genLevel(level));
 resize();genLevel(level);
 requestAnimationFrame(loop);
 })();

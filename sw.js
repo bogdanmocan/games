@@ -1,5 +1,5 @@
 // Mărește VERSION la fiecare modificare a fișierelor pentru a invalida cache-ul.
-const VERSION='v11';
+const VERSION='v12';
 const CACHE='games-'+VERSION;
 const PRECACHE=[
   './',
